@@ -1,0 +1,9 @@
+name : robot_env
+channels:
+  - conda-forge
+dependencies:
+  - numpy 
+  - opencv
+  - pip
+  - pip:
+    - depthai==2.22.0.0 

@@ -1,0 +1,12 @@
+This folder features the following : 
+
+1. Folder 'imgs' with sample images from lab and real world. Testing phase images.
+
+2. Environment.yml file that builds a virtual environment necessary for working with robot. For running it this way use command :
+	conda env create -f enviornment.yml
+   This is slower and forces Python 3.10. For lower versions more steps are required.
+
+3. Setup_env.sh file is a script that builds environment a bit differently with specific python version. It also installs the pip packages which are required during your programming. Run this script with command:
+	./setup_env.sh
+
+4. Codes

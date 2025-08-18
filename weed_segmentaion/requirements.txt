@@ -1,3 +1,0 @@
-depthai=2.20
-numpy
-opencv-python

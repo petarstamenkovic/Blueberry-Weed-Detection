@@ -119,8 +119,10 @@ with dai.Device(pipeline) as device:
             print("[INFO] Not enought valid points found... skipping frame")
             continue
         else:
+            # More points - slower algorithm 
             # Reduce the number of points for RANSAC
-            limit = 200000 # Adjust this number if necessary
+            # We take RANDOM limit number of points in order to fit a plane
+            limit = 200000 # This number can be modified if speed is bottleneck
             if pts.shape[0] > limit: 
                 idx = np.random.choice(pts.shape[0], limit, replace=False)
                 pts = pts[idx]
@@ -137,9 +139,13 @@ with dai.Device(pipeline) as device:
                 num_iterations = 1000
             )
 
+            # Extract parameters for Carthesian plane equation
             a,b,c,d = plane_model
             n = np.array([a,b,c], dtype=np.float64)
             n = n / np.linalg.norm(n)
+
+            # Local slope gradients
+            
 
             # Make normal point UP since camera y axis is DOWN
             if n[1] > 0:
@@ -169,7 +175,6 @@ with dai.Device(pipeline) as device:
                 last_write_time = current_time
 
             print("Plane: ax+by+cz+d=0 ->", plane_model)
-            #print("Unit normal n:", n)
             print("Tilt about X (rad, deg):", theta_x, math.degrees(theta_x))
             print("Tilt about Y (rad, deg):", theta_y, math.degrees(theta_y))
             print("==================================================")

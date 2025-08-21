@@ -172,7 +172,15 @@ with dai.Device(pipeline) as device:
             #print("Unit normal n:", n)
             print("Tilt about X (rad, deg):", theta_x, math.degrees(theta_x))
             print("Tilt about Y (rad, deg):", theta_y, math.degrees(theta_y))
+            print("==================================================")
 
             #disparityFrame = (disparityFrame * (255 / stereo.initialConfig.getMaxDisparity())).astype(np.uint8)        
             #disparityFrame = cv2.applyColorMap(disparityFrame, cv2.COLORMAP_JET)
             #cv2.imshow("Disparity", disparityFrame)
+
+
+
+### CONSIDERATIONS ###
+# So far in this version, both dispartity and RGB are not necessary. 
+# Since these views are really heavy the code, they are 
+# separated in other files. Once the project is finalised, remove unnecessary code.

@@ -119,8 +119,10 @@ with dai.Device(pipeline) as device:
             print("[INFO] Not enought valid points found... skipping frame")
             continue
         else:
+            # More points - slower algorithm 
             # Reduce the number of points for RANSAC
-            limit = 200000 # Adjust this number if necessary
+            # We take RANDOM limit number of points in order to fit a plane
+            limit = 200000 # This number can be modified if speed is bottleneck
             if pts.shape[0] > limit: 
                 idx = np.random.choice(pts.shape[0], limit, replace=False)
                 pts = pts[idx]
@@ -137,13 +139,36 @@ with dai.Device(pipeline) as device:
                 num_iterations = 1000
             )
 
+            # Extract parameters for Carthesian plane equation - slope plane
             a,b,c,d = plane_model
             n = np.array([a,b,c], dtype=np.float64)
             n = n / np.linalg.norm(n)
 
+            # Remove inliers of the slopped plane
+            pcd_sloped = pcd.select_by_index(inliers)
+            pcd_rest   = pcd.select_by_index(inliers, invert = True)
+
+            # RANSAC Plane fitting - Trying to segment a flat plane
+            plane_flattened, inliers_flat = pcd.segment_plane(
+                distance_threshold = 0.05,
+                ransac_n = 3,
+                num_iterations = 1000
+            )
+
+            # Extract parameters for Carthesian plane equation - flattened plane
+            a2,b2,c2,d2 = plane_flattened
+            n2 = np.array([a2,b2,c2], dtype=np.float64)
+            n2 = n2 / np.linalg.norm(n2)
+
+            
+            
+
             # Make normal point UP since camera y axis is DOWN
             if n[1] > 0:
                 n = -n
+
+            if n2[1] > 0:
+                n2 = -n
 
             # Extract angles
             theta_x = math.atan2(n[2], -n[1])
@@ -169,10 +194,20 @@ with dai.Device(pipeline) as device:
                 last_write_time = current_time
 
             print("Plane: ax+by+cz+d=0 ->", plane_model)
-            #print("Unit normal n:", n)
             print("Tilt about X (rad, deg):", theta_x, math.degrees(theta_x))
             print("Tilt about Y (rad, deg):", theta_y, math.degrees(theta_y))
+            print("--------------------------------------------------")
+            print("Flat plane: a2x+b2y+c2z+d2=0 ->", plane_flattened)
+            print("==================================================")
+
 
             #disparityFrame = (disparityFrame * (255 / stereo.initialConfig.getMaxDisparity())).astype(np.uint8)        
             #disparityFrame = cv2.applyColorMap(disparityFrame, cv2.COLORMAP_JET)
             #cv2.imshow("Disparity", disparityFrame)
+
+
+
+### CONSIDERATIONS ###
+# So far in this version, both dispartity and RGB are not necessary. 
+# Since these views are really heavy the code, they are 
+# separated in other files. Once the project is finalised, remove unnecessary code.

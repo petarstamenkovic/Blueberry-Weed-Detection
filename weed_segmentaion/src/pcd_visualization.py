@@ -61,9 +61,20 @@ with dai.Device(pipeline) as device:
     # Initialize with some dummy point (avoid empty point cloud)
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
-    vis.add_geometry(pcd)
+    #vis.add_geometry(pcd)
     vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5))
 
+    # Create a point cloud for inliers
+    pcd_inliers_vis = o3d.geometry.PointCloud()
+    pcd_inliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    vis.add_geometry(pcd_inliers_vis)
+
+    # Create a point cloud for outliers
+    pcd_outliers_vis = o3d.geometry.PointCloud()
+    pcd_outliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    vis.add_geometry(pcd_outliers_vis)
+
+    # Main loop
     while True:
         depth = depthQueue.get()
         depthFrame = depth.getFrame()
@@ -73,19 +84,65 @@ with dai.Device(pipeline) as device:
         if pts.shape[0] < 10:
             print("[INFO] Not enough valid points, skipping this frame...")
             continue 
+        else:
 
-        limit = 100000
-        if pts.shape[0] > limit:
-            idx = np.random.choice(pts.shape[0], limit, replace=False)
-            pts = pts[idx]
+            limit = 100000
+            if pts.shape[0] > limit:
+                idx = np.random.choice(pts.shape[0], limit, replace=False)
+                pts = pts[idx]
 
-        # Point cloud update
-        pcd.points = o3d.utility.Vector3dVector(pts)
-        pcd.colors = o3d.utility.Vector3dVector(np.tile([0.5,0.5,1.0], (pts.shape[0], 1)))  # optional color
+            # Point cloud update
+            pcd.points = o3d.utility.Vector3dVector(pts)
+            pcd.colors = o3d.utility.Vector3dVector(np.tile([0.5,0.5,1.0], (pts.shape[0], 1)))  # optional color
 
-        vis.update_geometry(pcd)
-        vis.poll_events()
-        vis.update_renderer()
+            # RANSAC Plane fitting - Returns plane parameters from plane equation
+            # ax + by + cz + d = 0
+            plane_model, inliers = pcd.segment_plane(
+                distance_threshold = 0.01, # 1cm - Adjust this (increase) if fitting fails
+                ransac_n = 3,
+                num_iterations = 1000
+            )
+
+            # Extract parameters for Carthesian plane equation - slope plane
+            a,b,c,d = plane_model
+            n = np.array([a,b,c], dtype=np.float64)
+            n = n / np.linalg.norm(n)
+
+            angle = np.arccos(np.abs(n[2]))
+
+            # Extract inliers
+            pcd_inliers = pcd.select_by_index(inliers)
+            pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0]) # Red
+
+            pcd_inliers_vis.points = pcd_inliers.points
+            pcd_inliers_vis.colors = pcd_inliers.colors
+
+            # Extract outliers 
+            pcd_outliers = pcd.select_by_index(inliers, invert = True)
+            pcd_outliers.paint_uniform_color([0.0, 1.0, 0.0]) # Green
+
+            pcd_outliers_vis.points = pcd_outliers.points
+            pcd_outliers_vis.colors = pcd_outliers.colors
+
+            plane_model_flat, inliers_flat = pcd_outliers.segment_plane(
+                distance_threshold = 0.01, # 1cm - Adjust this (increase) if fitting fails
+                ransac_n = 3,
+                num_iterations = 1000
+            )
+
+            # Extract parameters for Carthesian plane equation - flat plane
+            a2,b2,c2,d2 = plane_model_flat
+            n2 = np.array([a2,b2,c2], dtype=np.float64)
+            n2 = n2 / np.linalg.norm(n)
+
+            print(f"Inliers plane parameters  -> a :  {a}, b :   {b}, c :   {c}, d :   {d}")
+            print(f"Outliers plane parameters -> a2 : {a2}, b2 : {b2}, c2 : {c2}, d2 : {d2}")
+            print("==========================================")
+
+            vis.update_geometry(pcd_inliers_vis)
+            vis.update_geometry(pcd_outliers_vis)
+            vis.poll_events()
+            vis.update_renderer()
 
         # Terminate the program with Ctrl + C in terminal
 

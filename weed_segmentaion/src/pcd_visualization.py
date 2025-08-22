@@ -70,9 +70,14 @@ with dai.Device(pipeline) as device:
     vis.add_geometry(pcd_inliers_vis)
 
     # Create a point cloud for outliers
-    pcd_outliers_vis = o3d.geometry.PointCloud()
-    pcd_outliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
-    vis.add_geometry(pcd_outliers_vis)
+    #pcd_outliers_vis = o3d.geometry.PointCloud()
+    #pcd_outliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    #vis.add_geometry(pcd_outliers_vis)
+
+    # Create a point cloud for flat inliers
+    pcd_inliers_flat_vis = o3d.geometry.PointCloud()
+    pcd_inliers_flat_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    vis.add_geometry(pcd_inliers_flat_vis)
 
     # Main loop
     while True:
@@ -86,7 +91,7 @@ with dai.Device(pipeline) as device:
             continue 
         else:
 
-            limit = 100000
+            limit = 50000
             if pts.shape[0] > limit:
                 idx = np.random.choice(pts.shape[0], limit, replace=False)
                 pts = pts[idx]
@@ -94,6 +99,9 @@ with dai.Device(pipeline) as device:
             # Point cloud update
             pcd.points = o3d.utility.Vector3dVector(pts)
             pcd.colors = o3d.utility.Vector3dVector(np.tile([0.5,0.5,1.0], (pts.shape[0], 1)))  # optional color
+
+            pcd_clean, ind = pcd.remove_statistical_outlier(nb_neighbors = 25, std_ratio = 2.0)
+            pcd = pcd.select_by_index(ind)
 
             # RANSAC Plane fitting - Returns plane parameters from plane equation
             # ax + by + cz + d = 0
@@ -121,14 +129,22 @@ with dai.Device(pipeline) as device:
             pcd_outliers = pcd.select_by_index(inliers, invert = True)
             pcd_outliers.paint_uniform_color([0.0, 1.0, 0.0]) # Green
 
-            pcd_outliers_vis.points = pcd_outliers.points
-            pcd_outliers_vis.colors = pcd_outliers.colors
+            #pcd_outliers_vis.points = pcd_outliers.points
+            #pcd_outliers_vis.colors = pcd_outliers.colors
 
+            # Segment the flat plane - Find new inliers from the outliers of the previous segmentation
             plane_model_flat, inliers_flat = pcd_outliers.segment_plane(
-                distance_threshold = 0.01, # 1cm - Adjust this (increase) if fitting fails
+                distance_threshold = 0.01, 
                 ransac_n = 3,
                 num_iterations = 1000
             )
+
+            # Extract new flat inliers FROM outliers of the previous segmentation
+            pcd_inliers_flat = pcd_outliers.select_by_index(inliers_flat)
+            pcd_inliers_flat.paint_uniform_color([0.0, 0.0, 1.0])
+
+            pcd_inliers_flat_vis.points = pcd_inliers_flat.points
+            pcd_inliers_flat_vis.colors = pcd_inliers_flat.colors
 
             # Extract parameters for Carthesian plane equation - flat plane
             a2,b2,c2,d2 = plane_model_flat
@@ -140,7 +156,8 @@ with dai.Device(pipeline) as device:
             print("==========================================")
 
             vis.update_geometry(pcd_inliers_vis)
-            vis.update_geometry(pcd_outliers_vis)
+            #vis.update_geometry(pcd_outliers_vis)
+            vis.update_geometry(pcd_inliers_flat_vis)
             vis.poll_events()
             vis.update_renderer()
 

@@ -1,4 +1,4 @@
-# This code simulates the idea for a blueberry bank transition line - Simulation
+# This code simulates the idea for a blueberry bank - Detected two slopes and draw them with Carthesian parameters
 
 # Necessary imports
 import numpy as np
@@ -29,13 +29,6 @@ y2 = np.linspace(0, 10, 20)
 x2, y2 = np.meshgrid(x2, y2)
 z2 = (-d2 - a2*x2 - b2*y2) / c2 # Plane 2 equation
 
-"""
-# Transition line - Simulated brute force 
-transition_line_x = x1[-1, :]    
-transition_line_y = y1[-1, :]    
-transition_line_z = z1[-1, :]    
-"""
-
 # Plot
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
@@ -46,8 +39,6 @@ ax.plot_surface(x1, y1, z1, alpha=0.5, rstride=1, cstride=1, color='cyan', edgec
 # Plot flat top plane
 ax.plot_surface(x2, y2, z2, alpha=0.7, rstride=1, cstride=1, color='lime', edgecolor='k')
 
-# Plot transition line
-#ax.plot(transition_line_x, transition_line_y, transition_line_z, color='red', linewidth=3, label='Transition Line')
 
 # Labels
 ax.set_xlabel('X')

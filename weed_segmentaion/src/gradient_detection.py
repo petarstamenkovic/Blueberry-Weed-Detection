@@ -2,6 +2,14 @@ import numpy as np
 import depthai as dai
 import open3d as o3d
 
+# Parameters 
+normal_vector_threshold = 0.1
+offset_threshold = 0.1
+
+# Camera intrinsics - Extracted frp, calibration.py
+fx, fy = 570.33, 570.3   # Focal lenghts
+cx, cy = 655.38, 358.85  # Camera principle values 
+
 # Function to get stereo pair
 def getStereoPair(pipeline, monoLeft, monoRight):
     stereo = pipeline.create(dai.node.StereoDepth)
@@ -11,6 +19,31 @@ def getStereoPair(pipeline, monoLeft, monoRight):
     monoLeft.out.link(stereo.left)
     monoRight.out.link(stereo.right)
     return stereo
+
+def updatePlane(prevPlane, newPlane):
+    a,b,c,d = newPlane
+    new_normal_vector = np.array([a,b,c])
+    new_normal_vector = new_normal_vector / np.linalg.norm(new_normal_vector)
+
+    if prevPlane is None:
+        return newPlane
+    
+    # Previous
+    prev_a, prev_b, prev_c, prev_d = prevPlane
+    old_normal_vector = np.array([prev_a, prev_b, prev_c])
+    old_normal_vector = old_normal_vector / np.linalg.norm(old_normal_vector)
+
+    # Calculate the similarities of the normal vectors of a previous and a current plane
+    normal_vectors_alligned = abs(np.dot(new_normal_vector, old_normal_vector))
+
+    # Calculate the difference in offsets of planes
+    offset_diffence = abs(d - prev_d)
+
+    # Comparison of thep lanes under conditions
+    if normal_vectors_alligned > (1 - normal_vector_threshold) and offset_diffence < offset_threshold:
+        return newPlane  # Update the plane with a new one 
+    else:
+        return prevPlane # Keep the previous plane
 
 # Create pipeline
 pipeline = dai.Pipeline()
@@ -25,13 +58,14 @@ monoRight.setBoardSocket(dai.CameraBoardSocket.CAM_C)
 
 # Stereo depth
 stereo = getStereoPair(pipeline, monoLeft, monoRight)
+
+# XLinkOut node for depth output
 xOutDepth = pipeline.createXLinkOut()
 xOutDepth.setStreamName("Depth")
 stereo.depth.link(xOutDepth.input)
 
-# Camera intrinsics
-fx, fy = 570.33, 570.3
-cx, cy = 655.38, 358.85
+# Initial plane variable since the previous plane does not 'exist' in first iteration of updatePlane function
+previousPlane = None
 
 # Connect to device
 with dai.Device(pipeline) as device:
@@ -95,12 +129,16 @@ with dai.Device(pipeline) as device:
 
         # Try to segment a plane
         plane_model, inliers = pcd.segment_plane(
-            distance_threshold=0.01, 
+            distance_threshold=0.01, # Try adjusting this parameter in case plane starts shifting
             ransac_n=3, 
             num_iterations=1000)
         
+        # Function that keeps a slope plane locked
+        activePlane = updatePlane(previousPlane, plane_model)
+        
         # Extract Carthesian parameter values
-        a, b, c, d = plane_model
+        a, b, c, d = activePlane
+        previousPlane = activePlane
 
         # Extract inliers and prepare them for visualization 
         pcd_inliers = pcd.select_by_index(inliers)

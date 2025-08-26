@@ -81,7 +81,7 @@ with dai.Device(pipeline) as device:
     pcd_inliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
     pcd_inliers_vis.paint_uniform_color([1.0, 0.0, 0.0])  # Red
     vis.add_geometry(pcd_inliers_vis)
-
+    """
     # Maximum gradient point - intersection of slope and flat plane
     max_pcd = o3d.geometry.PointCloud()
     max_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
@@ -94,6 +94,36 @@ with dai.Device(pipeline) as device:
     line_set.lines = o3d.utility.Vector2iVector([[0,1]])
     line_set.colors = o3d.utility.Vector3dVector([[0,1,0]])  # Green
     vis.add_geometry(line_set)
+    """
+    
+    # Maximum gradient point lower - intersection of ground and slope plane
+    max_grad_pt_lower_pcd = o3d.geometry.PointCloud()
+    max_grad_pt_lower_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    max_grad_pt_lower_pcd.paint_uniform_color([1.0, 1.0, 0.0])  # Yellow
+    vis.add_geometry(max_grad_pt_lower_pcd)
+
+    # Maximum gradient point upper - intersection of ground and slope plane
+    max_grad_pt_upper_pcd = o3d.geometry.PointCloud()
+    max_grad_pt_upper_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
+    max_grad_pt_upper_pcd.paint_uniform_color([1.0, 1.0, 1.0])  # Black
+    vis.add_geometry(max_grad_pt_upper_pcd)
+
+    # Green line (LineSet) parallel to X-axis 
+    line_set_lower = o3d.geometry.LineSet()
+    line_set_lower.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially 
+    line_set_lower.lines = o3d.utility.Vector2iVector([[0,1]])
+    line_set_lower.colors = o3d.utility.Vector3dVector([[0, 1, 0]])  # Green
+    vis.add_geometry(line_set_lower)
+
+    # Green line (LineSet) parallel to X-axis 
+    line_set_upper = o3d.geometry.LineSet()
+    line_set_upper.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially 
+    line_set_upper.lines = o3d.utility.Vector2iVector([[0,1]])
+    line_set_upper.colors = o3d.utility.Vector3dVector([[0.3, 0.15, 0]])  # Brown !!!!
+    vis.add_geometry(line_set_upper)
+
+
+
 
     while True:
         # Fetch a depth frame (metrics in mm) and convert it for precission
@@ -152,7 +182,77 @@ with dai.Device(pipeline) as device:
         X_in = np.asarray(pcd_inliers.points)[:,0]
         Y_in = np.asarray(pcd_inliers.points)[:,1]
         Z_in = np.asarray(pcd_inliers.points)[:,2]
+
+        height_values = a*X_in + b*Y_in + c*Z_in + d
+
+        # ============= DIVISION OF A FRAME INTO LOWER AND UPPER ============== #
+
+        # Divison by Y coordinates 
+        y_threshold = np.median(Y_in)
+
+        # Create masks for upper and lower inlier points
+        lower_frame_mask = Y_in < y_threshold
+        upper_frame_mask = Y_in > y_threshold
+
+        # Apply masks
+        X_lower, Y_lower, Z_lower = X_in[lower_frame_mask], Y_in[lower_frame_mask], Z_in[lower_frame_mask]
+        X_upper, Y_upper, Z_upper = X_in[upper_frame_mask], Y_in[upper_frame_mask], Z_in[upper_frame_mask]
+
+        # Height functions 
+        height_lower = height_values[lower_frame_mask]
+        height_upper = height_values[upper_frame_mask]
+
+        # Compute gradients for both sections
+        gradient_lower = np.abs(np.diff(height_lower, n=1))
+        gradient_lower = np.pad(gradient_lower, (0,1), 'constant')
+
+        gradient_upper = np.abs(np.diff(height_upper, n=1))
+        gradient_upper = np.pad(gradient_upper, (0,1), 'constant')
+
+        # Maximum gradient values
+        max_gradient_lower = np.argmax(gradient_lower)
+        max_gradient_upper = np.argmax(gradient_upper)
+
+        # Define points for these maximums
+        max_gradient_lower_point = np.array([X_lower[max_gradient_lower], Y_lower[max_gradient_lower], Z_lower[max_gradient_lower]])
+        max_gradient_upper_point = np.array([X_upper[max_gradient_upper], Y_upper[max_gradient_upper], Z_upper[max_gradient_upper]])
         
+        # Open3D points for maximum gradient values
+        max_grad_pt_lower_pcd.points = o3d.utility.Vector3dVector(max_gradient_lower_point.reshape(1,3))
+        max_grad_pt_upper_pcd.points = o3d.utility.Vector3dVector(max_gradient_upper_point.reshape(1,3))
+
+        # Green line along X-axis
+        x_range = np.linspace(-1.0, 1.0, 50)  # Draw a 50 point line from -1 to 1 (ground plane parallel) 
+        
+        # Fixed values for maximum gradient point 
+        y_fixed_lower = max_gradient_lower_point[1]
+        y_fixed_higher = max_gradient_upper_point[1]
+
+        z_fixed_lower = max_gradient_lower_point[2]
+        z_fixed_higher = max_gradient_upper_point[2]
+        
+        # Combination of 3 coordinates to create a 3D space for the line
+        # full_like fills y_fixed and z_fixed to be the same dimension as x_range
+        line_points_lower = np.stack([x_range, np.full_like(x_range, y_fixed_lower), np.full_like(x_range, z_fixed_lower)], axis=1)
+        line_points_upper = np.stack([x_range, np.full_like(x_range, y_fixed_higher), np.full_like(x_range, z_fixed_higher)], axis=1)
+
+        # Line parameters and configuration - lower frame
+        line_set_lower.points = o3d.utility.Vector3dVector(line_points_lower)
+        lines_lower = [[i, i+1] for i in range(len(line_points_lower)-1)]
+        line_set_lower.lines = o3d.utility.Vector2iVector(lines_lower)
+        line_set_lower.colors = o3d.utility.Vector3dVector(np.tile([0,1,0], (len(lines_lower),1)))
+
+        # Line parameters and configuration - upper frame
+        line_set_upper.points = o3d.utility.Vector3dVector(line_points_upper)
+        lines_upper = [[i, i+1] for i in range(len(line_points_upper)-1)]
+        line_set_upper.lines = o3d.utility.Vector2iVector(lines_upper)
+        line_set_upper.colors = o3d.utility.Vector3dVector(np.tile([0.3,0.15,0], (len(lines_upper),1)))
+
+
+        # ===================================================================== #
+
+        """
+
         # Height map - Depth map does not work since its too much camera depended
         # Relative to a slope normal - distance to a slope plane due to imperfection of real-life slopes
         # Points that are almost beyond slope is exactly what we are looking for - the transition from slope to flat
@@ -184,9 +284,16 @@ with dai.Device(pipeline) as device:
         line_set.lines = o3d.utility.Vector2iVector(lines)
         line_set.colors = o3d.utility.Vector3dVector(np.tile([0,1,0], (len(lines),1)))
 
+        """
+
         # Update visualizer and its point clouds
         vis.update_geometry(pcd_inliers_vis)
-        vis.update_geometry(max_pcd)
-        vis.update_geometry(line_set)
+        #vis.update_geometry(max_pcd)
+        #vis.update_geometry(line_set)
+        
+        vis.update_geometry(max_grad_pt_lower_pcd)
+        vis.update_geometry(max_grad_pt_upper_pcd)
+        vis.update_geometry(line_set_lower)
+        vis.update_geometry(line_set_upper)
         vis.poll_events()
         vis.update_renderer()

@@ -1,12 +1,13 @@
 import numpy as np
 import depthai as dai
 import open3d as o3d
+import cv2
 
 # Parameters 
 normal_vector_threshold = 0.1
 offset_threshold = 0.1
 
-# Camera intrinsics - Extracted frp, calibration.py
+# Camera intrinsics - Extracted from calibration.py
 fx, fy = 570.33, 570.3   # Focal lenghts
 cx, cy = 655.38, 358.85  # Camera principle values 
 
@@ -21,14 +22,16 @@ def getStereoPair(pipeline, monoLeft, monoRight):
     return stereo
 
 def updatePlane(prevPlane, newPlane):
+    # Current plane Carthesian parameters and normal vector
     a,b,c,d = newPlane
     new_normal_vector = np.array([a,b,c])
     new_normal_vector = new_normal_vector / np.linalg.norm(new_normal_vector)
 
+    # In first iteration, there is no 'previous' plane
     if prevPlane is None:
         return newPlane
     
-    # Previous
+    # Previous plane Carthesian parameters and normal vector
     prev_a, prev_b, prev_c, prev_d = prevPlane
     old_normal_vector = np.array([prev_a, prev_b, prev_c])
     old_normal_vector = old_normal_vector / np.linalg.norm(old_normal_vector)
@@ -64,7 +67,7 @@ xOutDepth = pipeline.createXLinkOut()
 xOutDepth.setStreamName("Depth")
 stereo.depth.link(xOutDepth.input)
 
-# Initial plane variable since the previous plane does not 'exist' in first iteration of updatePlane function
+# Initial plane variable
 previousPlane = None
 
 # Connect to device
@@ -81,6 +84,7 @@ with dai.Device(pipeline) as device:
     pcd_inliers_vis.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
     pcd_inliers_vis.paint_uniform_color([1.0, 0.0, 0.0])  # Red
     vis.add_geometry(pcd_inliers_vis)
+
     """
     # Maximum gradient point - intersection of slope and flat plane
     max_pcd = o3d.geometry.PointCloud()
@@ -110,20 +114,17 @@ with dai.Device(pipeline) as device:
 
     # Green line (LineSet) parallel to X-axis 
     line_set_lower = o3d.geometry.LineSet()
-    line_set_lower.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially 
+    line_set_lower.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially  [0, 0, 0] and [0, 0, 0]                                                                                                                       [0, 0, 0]
     line_set_lower.lines = o3d.utility.Vector2iVector([[0,1]])
     line_set_lower.colors = o3d.utility.Vector3dVector([[0, 1, 0]])  # Green
     vis.add_geometry(line_set_lower)
 
     # Green line (LineSet) parallel to X-axis 
     line_set_upper = o3d.geometry.LineSet()
-    line_set_upper.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially 
+    line_set_upper.points = o3d.utility.Vector3dVector(np.zeros((2,3))) 
     line_set_upper.lines = o3d.utility.Vector2iVector([[0,1]])
-    line_set_upper.colors = o3d.utility.Vector3dVector([[0.3, 0.15, 0]])  # Brown !!!!
+    line_set_upper.colors = o3d.utility.Vector3dVector([[0.3, 0.15, 0]])  # Brown 
     vis.add_geometry(line_set_upper)
-
-
-
 
     while True:
         # Fetch a depth frame (metrics in mm) and convert it for precission
@@ -133,6 +134,11 @@ with dai.Device(pipeline) as device:
         # From mm to m
         Z = depthFrame / 1000.0 
         
+        ## Noise removal with median filtering
+        depthFrame = cv2.medianBlur(depthFrame, 5)
+
+        ## ================================================= ##
+
         # From pixel values to real-life values - Back-projecting
         h, w = Z.shape
         u, v = np.meshgrid(np.arange(w), np.arange(h))
@@ -157,12 +163,19 @@ with dai.Device(pipeline) as device:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts)
 
+        # Reducing a noise - Both ways are extremely heavy on visualizer - Inresponsive
+        #pcd_clean, ind = pcd.remove_statistical_outlier(nb_neighbors = 20, std_ratio = 2.0)
+        #pcd = pcd.select_by_index(ind)
+
+        #cl, ind = pcd.remove_radius_outlier(nb_points=5, radius=0.05)
+        #pcd_clean = pcd.select_by_index(ind)
+
         # Try to segment a plane
         plane_model, inliers = pcd.segment_plane(
             distance_threshold=0.01, # Try adjusting this parameter in case plane starts shifting
             ransac_n=3, 
             num_iterations=1000)
-        
+
         # Function that keeps a slope plane locked
         activePlane = updatePlane(previousPlane, plane_model)
         
@@ -172,6 +185,13 @@ with dai.Device(pipeline) as device:
 
         # Extract inliers and prepare them for visualization 
         pcd_inliers = pcd.select_by_index(inliers)
+
+        # DBScan clustering - Extremely heavy on the visualizer that it becomes inresponsive
+        #labels = np.array(
+        #    pcd_inliers.cluster_dbscan(eps = 0.05, min_points = 10)
+        #)
+        #max_label = labels.max()
+    
         pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0])
         pcd_inliers_vis.points = pcd_inliers.points
         pcd_inliers_vis.colors = pcd_inliers.colors
@@ -290,10 +310,12 @@ with dai.Device(pipeline) as device:
         vis.update_geometry(pcd_inliers_vis)
         #vis.update_geometry(max_pcd)
         #vis.update_geometry(line_set)
-        
         vis.update_geometry(max_grad_pt_lower_pcd)
         vis.update_geometry(max_grad_pt_upper_pcd)
         vis.update_geometry(line_set_lower)
         vis.update_geometry(line_set_upper)
         vis.poll_events()
         vis.update_renderer()
+
+
+# Terminate the code with Ctrl + C

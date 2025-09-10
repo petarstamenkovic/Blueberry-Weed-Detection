@@ -1,3 +1,6 @@
+# This code uses gradient and point cloud differences to find the line of intersection
+
+# Necessary imports
 import numpy as np
 import depthai as dai
 import open3d as o3d
@@ -121,9 +124,6 @@ with dai.Device(pipeline) as device:
     line_set_upper.lines = o3d.utility.Vector2iVector([[0,1]])
     line_set_upper.colors = o3d.utility.Vector3dVector([[0.3, 0.15, 0]])  # Brown !!!!
     vis.add_geometry(line_set_upper)
-
-
-
 
     while True:
         # Fetch a depth frame (metrics in mm) and convert it for precission

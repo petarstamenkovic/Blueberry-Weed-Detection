@@ -1,1 +1,0 @@
-# This code tries to fit a plane from the output of a stereo node with PCA algorithm

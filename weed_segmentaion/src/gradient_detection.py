@@ -1,4 +1,4 @@
-# This code uses gradient and point cloud differences to find the line of intersection
+# This code uses gradient calculation and point cloud differences to find the lines of intersection
 
 # Necessary imports
 import numpy as np
@@ -6,7 +6,7 @@ import depthai as dai
 import open3d as o3d
 import cv2
 
-# Parameters 
+# Parameters for plane comparison
 normal_vector_threshold = 0.1
 offset_threshold = 0.1
 
@@ -16,7 +16,7 @@ cx, cy = 655.38, 358.85  # Camera principle values
 
 # ========================= FUNCTIONS ========================= #
 
-# Function to get stereo pair
+# Function to get stereo pair and configure it 
 def getStereoPair(pipeline, monoLeft, monoRight):
     stereo = pipeline.create(dai.node.StereoDepth)
     stereo.setLeftRightCheck(True)
@@ -26,6 +26,7 @@ def getStereoPair(pipeline, monoLeft, monoRight):
     monoRight.out.link(stereo.right)
     return stereo
 
+# Function that tries to maintain the focused plain
 def updatePlane(prevPlane, newPlane):
     # Current plane Carthesian parameters and normal vector
     a,b,c,d = newPlane
@@ -53,13 +54,13 @@ def updatePlane(prevPlane, newPlane):
     else:
         return prevPlane # Keep the previous plane
 
-# Fetch maximum gradient points
+# Fetch first num_points number of maximum gradient points
 def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
-    # Get indices of the top 'num_points' gradients
+    # Sort in descending order and grab first num_points samples
     top_indices = np.argsort(gradient_array)[::-1]
     top_indices = top_indices[:num_points]
 
-    # Fetch corresponding 3D points
+    # Fetch corresponding 3D parameters for these points
     max_points = np.stack([X[top_indices], Y[top_indices], Z[top_indices]], axis=1)
 
     return max_points
@@ -74,6 +75,7 @@ def pca_line_fitting(points):
     # Define a covariance matrix
     covariance_matrix = np.cov(centered_points, rowvar=False)
 
+    # Eigen vectors 
     eigvals, eigvecs = np.linalg.eig(covariance_matrix)
 
     direction = eigvecs[:, np.argmax(eigvals)]
@@ -161,7 +163,7 @@ with dai.Device(pipeline) as device:
         # From mm to m
         Z = depthFrame / 1000.0 
         
-        ## Noise removal with median filtering
+        ## Noise removal with median filtering - Seems like it doesn't make much difference
         depthFrame = cv2.medianBlur(depthFrame, 5)
 
         # From pixel values to real-life values - Back-projecting
@@ -228,6 +230,7 @@ with dai.Device(pipeline) as device:
         Y_in = np.asarray(pcd_inliers.points)[:,1]
         Z_in = np.asarray(pcd_inliers.points)[:,2]
 
+        # How much is the point far away from the ideal segmented plane 
         height_values = a*X_in + b*Y_in + c*Z_in + d
 
         # ============= DIVISION OF A FRAME INTO LOWER AND UPPER ============== #

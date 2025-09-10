@@ -14,6 +14,8 @@ offset_threshold = 0.1
 fx, fy = 570.33, 570.3   # Focal lenghts
 cx, cy = 655.38, 358.85  # Camera principle values 
 
+# ========================= FUNCTIONS ========================= #
+
 # Function to get stereo pair
 def getStereoPair(pipeline, monoLeft, monoRight):
     stereo = pipeline.create(dai.node.StereoDepth)
@@ -50,6 +52,54 @@ def updatePlane(prevPlane, newPlane):
         return newPlane  # Update the plane with a new one 
     else:
         return prevPlane # Keep the previous plane
+
+# Fetch maximum gradient points
+def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
+    # Get indices of the top 'num_points' gradients
+    top_indices = np.argsort(gradient_array)[::-1]
+    top_indices = top_indices[:num_points]
+
+    # Fetch corresponding 3D points
+    max_points = np.stack([X[top_indices], Y[top_indices], Z[top_indices]], axis=1)
+
+    return max_points
+    
+# PCA line fitting function
+def pca_line_fitting(points):
+
+    # Center the points around the mean
+    mean_point = np.mean(points, axis=0)
+    centered_points = points - mean_point
+
+    # Define a covariance matrix
+    covariance_matrix = np.cov(centered_points, rowvar=False)
+
+    eigvals, eigvecs = np.linalg.eig(covariance_matrix)
+
+    direction = eigvecs[:, np.argmax(eigvals)]
+
+    return mean_point, direction
+
+# Convert PCA lines to Open3D lines
+def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0]):
+    direction = direction / np.linalg.norm(direction)
+
+    # Create endpoints of the line segment
+    endpoint1 = mean_point - (direction * length / 2)
+    endpoint2 = mean_point + (direction * length / 2)
+
+    # Define line parameters
+    line_points = [endpoint1, endpoint2] # Actual points of the line
+    lines = [[0, 1]]  # Single line connecting the two points - index based
+
+    # Add line parameters
+    line_set.points = o3d.utility.Vector3dVector(line_points)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector([color])
+    
+    return line_set
+
+# ============================= CODE EXECUTION ============================= #
 
 # Create pipeline
 pipeline = dai.Pipeline()
@@ -88,47 +138,21 @@ with dai.Device(pipeline) as device:
     pcd_inliers_vis.paint_uniform_color([1.0, 0.0, 0.0])  # Red
     vis.add_geometry(pcd_inliers_vis)
 
-    """
-    # Maximum gradient point - intersection of slope and flat plane
-    max_pcd = o3d.geometry.PointCloud()
-    max_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
-    max_pcd.paint_uniform_color([1.0, 1.0, 0.0])  # Yellow
-    vis.add_geometry(max_pcd)
-
-    # Green line (LineSet) parallel to X-axis 
-    line_set = o3d.geometry.LineSet()
-    line_set.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially 
-    line_set.lines = o3d.utility.Vector2iVector([[0,1]])
-    line_set.colors = o3d.utility.Vector3dVector([[0,1,0]])  # Green
-    vis.add_geometry(line_set)
-    """
-    
-    # Maximum gradient point lower - intersection of ground and slope plane
-    max_grad_pt_lower_pcd = o3d.geometry.PointCloud()
-    max_grad_pt_lower_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
-    max_grad_pt_lower_pcd.paint_uniform_color([1.0, 1.0, 0.0])  # Yellow
-    vis.add_geometry(max_grad_pt_lower_pcd)
-
-    # Maximum gradient point upper - intersection of ground and slope plane
-    max_grad_pt_upper_pcd = o3d.geometry.PointCloud()
-    max_grad_pt_upper_pcd.points = o3d.utility.Vector3dVector(np.zeros((1,3)))
-    max_grad_pt_upper_pcd.paint_uniform_color([1.0, 1.0, 1.0])  # Black
-    vis.add_geometry(max_grad_pt_upper_pcd)
-
-    # Green line (LineSet) parallel to X-axis 
+    # Lower line of intersection
     line_set_lower = o3d.geometry.LineSet()
-    line_set_lower.points = o3d.utility.Vector3dVector(np.zeros((2,3)))  # 2,3 - Two points in coordinate center initially  [0, 0, 0] and [0, 0, 0]                                                                                                                       [0, 0, 0]
+    line_set_lower.points = o3d.utility.Vector3dVector(np.zeros((2,3)))
     line_set_lower.lines = o3d.utility.Vector2iVector([[0,1]])
     line_set_lower.colors = o3d.utility.Vector3dVector([[0, 1, 0]])  # Green
     vis.add_geometry(line_set_lower)
 
-    # Green line (LineSet) parallel to X-axis 
+    # Upper line of intersection
     line_set_upper = o3d.geometry.LineSet()
     line_set_upper.points = o3d.utility.Vector3dVector(np.zeros((2,3))) 
     line_set_upper.lines = o3d.utility.Vector2iVector([[0,1]])
-    line_set_upper.colors = o3d.utility.Vector3dVector([[0.3, 0.15, 0]])  # Brown 
+    line_set_upper.colors = o3d.utility.Vector3dVector([[0, 0, 1]])  # Blue
     vis.add_geometry(line_set_upper)
-
+ 
+    # Main loop for processing
     while True:
         # Fetch a depth frame (metrics in mm) and convert it for precission
         depth = depthQueue.get()
@@ -140,8 +164,6 @@ with dai.Device(pipeline) as device:
         ## Noise removal with median filtering
         depthFrame = cv2.medianBlur(depthFrame, 5)
 
-        ## ================================================= ##
-
         # From pixel values to real-life values - Back-projecting
         h, w = Z.shape
         u, v = np.meshgrid(np.arange(w), np.arange(h))
@@ -149,9 +171,9 @@ with dai.Device(pipeline) as device:
         Y = (v - cy) * Z / fy
 
         # So now 
-        # X - Real-life x coordiantes of a pixel(u,v)
+        # X - Real-life x coordinates of a pixel(u,v)
         # Y - Real-life y coordinates of a pixel(u,v)
-        # Z - Distance from a cmaera to a  pixel(u,v)
+        # Z - Distance from a camera to a  pixel(u,v)
 
         # Convert to point cloud for RANSAC
         pts = np.stack([X.flatten(), Y.flatten(), Z.flatten()], axis=1)
@@ -181,8 +203,8 @@ with dai.Device(pipeline) as device:
 
         # Function that keeps a slope plane locked
         activePlane = updatePlane(previousPlane, plane_model)
-        
-        # Extract Carthesian parameter values
+
+        # Extract Cartesian parameter values
         a, b, c, d = activePlane
         previousPlane = activePlane
 
@@ -225,6 +247,21 @@ with dai.Device(pipeline) as device:
         height_lower = height_values[lower_frame_mask]
         height_upper = height_values[upper_frame_mask]
 
+        # ========= SORT SPATIALLY AND COMPUTE GRADIENTS ========= #
+        # Lower section
+        sort_lower_indices = np.argsort(Y_lower)
+        X_lower = X_lower[sort_lower_indices]
+        Y_lower = Y_lower[sort_lower_indices]
+        Z_lower = Z_lower[sort_lower_indices]
+        height_lower = height_lower[sort_lower_indices]
+
+        # Upper section
+        sort_upper_indices = np.argsort(Y_upper)
+        X_upper = X_upper[sort_upper_indices]
+        Y_upper = Y_upper[sort_upper_indices]
+        Z_upper = Z_upper[sort_upper_indices]
+        height_upper = height_upper[sort_upper_indices]
+
         # Compute gradients for both sections
         gradient_lower = np.abs(np.diff(height_lower, n=1))
         gradient_lower = np.pad(gradient_lower, (0,1), 'constant')
@@ -232,89 +269,23 @@ with dai.Device(pipeline) as device:
         gradient_upper = np.abs(np.diff(height_upper, n=1))
         gradient_upper = np.pad(gradient_upper, (0,1), 'constant')
 
-        # Maximum gradient values
-        max_gradient_lower = np.argmax(gradient_lower)
-        max_gradient_upper = np.argmax(gradient_upper)
+        # Number of points to fit a line of intersection - keep this number higher than 100
+        num_points = 200
 
-        # Define points for these maximums
-        max_gradient_lower_point = np.array([X_lower[max_gradient_lower], Y_lower[max_gradient_lower], Z_lower[max_gradient_lower]])
-        max_gradient_upper_point = np.array([X_upper[max_gradient_upper], Y_upper[max_gradient_upper], Z_upper[max_gradient_upper]])
-        
-        # Open3D points for maximum gradient values
-        max_grad_pt_lower_pcd.points = o3d.utility.Vector3dVector(max_gradient_lower_point.reshape(1,3))
-        max_grad_pt_upper_pcd.points = o3d.utility.Vector3dVector(max_gradient_upper_point.reshape(1,3))
+        # Fetch maximum gradient points
+        max_gradient_lower_points = fetch_maximum_points(X_lower, Y_lower, Z_lower, gradient_lower, num_points)
+        max_gradient_upper_points = fetch_maximum_points(X_upper, Y_upper, Z_upper, gradient_upper, num_points)
 
-        # Green line along X-axis
-        x_range = np.linspace(-1.0, 1.0, 50)  # Draw a 50 point line from -1 to 1 (ground plane parallel) 
-        
-        # Fixed values for maximum gradient point 
-        y_fixed_lower = max_gradient_lower_point[1]
-        y_fixed_higher = max_gradient_upper_point[1]
+        # Fit lines using PCA
+        mean_lower, direction_lower = pca_line_fitting(max_gradient_lower_points)
+        mean_upper, direction_upper = pca_line_fitting(max_gradient_upper_points)
 
-        z_fixed_lower = max_gradient_lower_point[2]
-        z_fixed_higher = max_gradient_upper_point[2]
-        
-        # Combination of 3 coordinates to create a 3D space for the line
-        # full_like fills y_fixed and z_fixed to be the same dimension as x_range
-        line_points_lower = np.stack([x_range, np.full_like(x_range, y_fixed_lower), np.full_like(x_range, z_fixed_lower)], axis=1)
-        line_points_upper = np.stack([x_range, np.full_like(x_range, y_fixed_higher), np.full_like(x_range, z_fixed_higher)], axis=1)
-
-        # Line parameters and configuration - lower frame
-        line_set_lower.points = o3d.utility.Vector3dVector(line_points_lower)
-        lines_lower = [[i, i+1] for i in range(len(line_points_lower)-1)]
-        line_set_lower.lines = o3d.utility.Vector2iVector(lines_lower)
-        line_set_lower.colors = o3d.utility.Vector3dVector(np.tile([0,1,0], (len(lines_lower),1)))
-
-        # Line parameters and configuration - upper frame
-        line_set_upper.points = o3d.utility.Vector3dVector(line_points_upper)
-        lines_upper = [[i, i+1] for i in range(len(line_points_upper)-1)]
-        line_set_upper.lines = o3d.utility.Vector2iVector(lines_upper)
-        line_set_upper.colors = o3d.utility.Vector3dVector(np.tile([0.3,0.15,0], (len(lines_upper),1)))
-
-
-        # ===================================================================== #
-
-        """
-
-        # Height map - Depth map does not work since its too much camera depended
-        # Relative to a slope normal - distance to a slope plane due to imperfection of real-life slopes
-        # Points that are almost beyond slope is exactly what we are looking for - the transition from slope to flat
-        height_values = a*X_in + b*Y_in + c*Z_in + d
-
-        # Height value array allows a simple neighbour difference calculation
-        gradient_mag = np.abs(np.diff(height_values, n=1))
-        gradient_mag = np.pad(gradient_mag, (0,1), 'constant') # same lenght as height_values
-
-        # Maximum gradient point - biggest height difference
-        max_diff = np.argmax(gradient_mag)
-        max_point_coord = np.array([[X_in[max_diff], Y_in[max_diff], Z_in[max_diff]]])
-        max_pcd.points = o3d.utility.Vector3dVector(max_point_coord)
-
-        # Green line along X-axis through max-gradient point
-        x_range = np.linspace(-1.0, 1.0, 50)  # Draw a 50 point line from -1 to 1 (ground plane parallel) 
-        
-        # Fixed values for maximum gradient point 
-        y_fixed = max_point_coord[0,1]
-        z_fixed = max_point_coord[0,2]
-        
-        # Combination of 3 coordinates to create a 3D space for the line
-        # full_like fills y_fixed and z_fixed to be the same dimension as x_range
-        line_points = np.stack([x_range, np.full_like(x_range, y_fixed), np.full_like(x_range, z_fixed)], axis=1)
-        
-        # Line parameters and configuration
-        line_set.points = o3d.utility.Vector3dVector(line_points)
-        lines = [[i, i+1] for i in range(len(line_points)-1)]
-        line_set.lines = o3d.utility.Vector2iVector(lines)
-        line_set.colors = o3d.utility.Vector3dVector(np.tile([0,1,0], (len(lines),1)))
-
-        """
+        # Convert lines into open3D lines 
+        line_set_lower = line_to_o3d_line(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
+        line_set_upper = line_to_o3d_line(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
 
         # Update visualizer and its point clouds
         vis.update_geometry(pcd_inliers_vis)
-        #vis.update_geometry(max_pcd)
-        #vis.update_geometry(line_set)
-        vis.update_geometry(max_grad_pt_lower_pcd)
-        vis.update_geometry(max_grad_pt_upper_pcd)
         vis.update_geometry(line_set_lower)
         vis.update_geometry(line_set_upper)
         vis.poll_events()

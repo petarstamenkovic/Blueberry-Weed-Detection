@@ -82,6 +82,21 @@ def pca_line_fitting(points):
 
     return mean_point, direction
 
+
+# Function that converts 3D point cloud back to 2D and returns coordinated in a tuple
+def backtrack_to_2d(endpoint):
+    X, Y, Z = endpoint
+    
+    # Skip if Z is 0 due to division
+    if Z == 0:
+        return None
+    
+    # Backtrack 
+    u = int((X * fx) / Z + cx)
+    v = int((Y * fy) / Z + cy)
+
+    return (u,v)
+
 # Convert PCA lines to Open3D lines
 def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0]):
     direction = direction / np.linalg.norm(direction)
@@ -90,16 +105,40 @@ def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0])
     endpoint1 = mean_point - (direction * length / 2)
     endpoint2 = mean_point + (direction * length / 2)
 
+    """
+    print("Endpoint 1 : ", endpoint1)
+    print("-------------------------------------")
+    print("Endpoint 2 : ", endpoint2)
+    print("=====================================")
+    """
+
     # Define line parameters
     line_points = [endpoint1, endpoint2] # Actual points of the line
     lines = [[0, 1]]  # Single line connecting the two points - index based
+
+    # Points in 2D - For line equation and ROI configuration later in the process
+    point1 = backtrack_to_2d(endpoint1)
+    point2 = backtrack_to_2d(endpoint2)
 
     # Add line parameters
     line_set.points = o3d.utility.Vector3dVector(line_points)
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.colors = o3d.utility.Vector3dVector([color])
     
-    return line_set
+    return line_set, point1, point2
+
+# Function that calculates 2D line equation
+def calculate_line_equation(point1, point2):
+    x1, y1 = point1
+    x2, y2 = point2
+
+    A = y1 - y2
+    B = x2 - x1
+
+    m = round(A / B , 2)
+
+    return m, x1, y1
+
 
 # ============================= CODE EXECUTION ============================= #
 
@@ -164,7 +203,7 @@ with dai.Device(pipeline) as device:
         Z = depthFrame / 1000.0 
         
         ## Noise removal with median filtering - Seems like it doesn't make much difference
-        depthFrame = cv2.medianBlur(depthFrame, 5)
+        #depthFrame = cv2.medianBlur(depthFrame, 5)
 
         # From pixel values to real-life values - Back-projecting
         h, w = Z.shape
@@ -204,11 +243,11 @@ with dai.Device(pipeline) as device:
             num_iterations=1000)
 
         # Function that keeps a slope plane locked
-        activePlane = updatePlane(previousPlane, plane_model)
+        #activePlane = updatePlane(previousPlane, plane_model)
 
         # Extract Cartesian parameter values
-        a, b, c, d = activePlane
-        previousPlane = activePlane
+        a, b, c, d = plane_model
+        #previousPlane = activePlane
 
         # Extract inliers and prepare them for visualization 
         pcd_inliers = pcd.select_by_index(inliers)
@@ -284,8 +323,16 @@ with dai.Device(pipeline) as device:
         mean_upper, direction_upper = pca_line_fitting(max_gradient_upper_points)
 
         # Convert lines into open3D lines 
-        line_set_lower = line_to_o3d_line(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
-        line_set_upper = line_to_o3d_line(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
+        line_set_lower, point1_lower, point2_lower = line_to_o3d_line(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
+        line_set_upper, point1_upper, point2_upper = line_to_o3d_line(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
+
+        # Calculate line equations for ROI later on
+        m1, x1, y1 = calculate_line_equation(point1_lower, point2_lower)
+        m2, x2, y2 = calculate_line_equation(point1_upper, point2_upper)
+
+        print(f"Lower line of intersection equation : (y - {y1}) = {m1} * (x - {x1})")
+        print("---------------------------------------------------------------")
+        print(f"Upper line of intersection equation : (y - {y2}) = {m2} * (x - {x2})")
 
         # Update visualizer and its point clouds
         vis.update_geometry(pcd_inliers_vis)

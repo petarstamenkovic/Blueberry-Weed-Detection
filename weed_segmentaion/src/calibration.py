@@ -1,5 +1,8 @@
+# This code provides the camera parameters cx, cy, fx and fy for depth to point cloud conversion. Run this upon device switch.
+
 #!/usr/bin/env python3
 
+# Necessary libraries
 import depthai as dai
 import numpy as np
 import sys

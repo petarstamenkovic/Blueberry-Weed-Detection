@@ -1,4 +1,5 @@
-# Python script for plane estimation using DepthAI stereo cameras
+# This code segments a plane using RANSAC and calculates the ANGLES OF ROTATION (yaw, pitch and roll) as well as 
+# Cartesian parameters for mentioned plane.
 
 # Imports 
 import numpy as np
@@ -160,9 +161,6 @@ with dai.Device(pipeline) as device:
             n2 = np.array([a2,b2,c2], dtype=np.float64)
             n2 = n2 / np.linalg.norm(n2)
 
-            
-            
-
             # Make normal point UP since camera y axis is DOWN
             if n[1] > 0:
                 n = -n
@@ -200,12 +198,9 @@ with dai.Device(pipeline) as device:
             print("Flat plane: a2x+b2y+c2z+d2=0 ->", plane_flattened)
             print("==================================================")
 
-
             #disparityFrame = (disparityFrame * (255 / stereo.initialConfig.getMaxDisparity())).astype(np.uint8)        
             #disparityFrame = cv2.applyColorMap(disparityFrame, cv2.COLORMAP_JET)
             #cv2.imshow("Disparity", disparityFrame)
-
-
 
 ### CONSIDERATIONS ###
 # So far in this version, both dispartity and RGB are not necessary. 

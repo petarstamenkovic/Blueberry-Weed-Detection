@@ -1,4 +1,5 @@
-# This code detects and outlines the bluberry weed on the image samples
+# This code detects and outlines the bluberry weed on the image samples. Code is written in a function so that it can be reused in
+# a live streaming manner.
 
 # Libraries import
 import cv2
@@ -7,6 +8,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import json
 
+# Function that takes a RGB frame and detects 
 def detectWeed(image):
     resizedSampleImage = cv2.resize(image, (640,480))
     cv2.imshow("Sample Image",resizedSampleImage)
@@ -67,12 +69,21 @@ def detectWeed(image):
             cv2.rectangle(boundingBoxImage, (x,y) , (x+w, y+h), (255,0,255), 2)
             print(f"Coordinates for contour center are (in pixels) -> x : {center[0]}: y : {center[1]} and area : {cv2.contourArea(c)}")
 
+    # Draw an image with bounded boxes - more compatible for spatial coordinates
+    cv2.imshow("Bounded box image", boundingBoxImage)
+    cv2.waitKey(0)
+
+    # Save data to json file - weed_cordinates.json
     with open("weed_coordinates.json", "w") as f:
         json.dump(all_data, f , indent=4)
+
+    # Close all cv2 windows
+    cv2.destroyAllWindows()
 
 def main():
     # Load a sample image - Uncomment the filename depending on the sample you want to use
     root_dir = Path(__file__).resolve().parent.parent
+
     #filename = root_dir / "imgs" / "realWorldSample" / "rw_sample3.png"
     filename = root_dir / "imgs" / "labSamples" / "lab_sample4.jpg"
 
@@ -85,14 +96,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-#sampleImage = cv2.imread("imgs/realWorldSample/rw_sample3.png")
-sampleImage = cv2.imread(filename)
-
-cv2.imshow("Bounded box image", boundingBoxImage)
-cv2.waitKey(0)
-
-# Remove all opened OpenCV windows
-cv2.destroyAllWindows()
-"""

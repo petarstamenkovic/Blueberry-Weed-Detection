@@ -1,6 +1,6 @@
-# RGB camera preview using DepthAI
+# This code provides RGB camera preview using DepthAI. Mainly used to setup a good camera angle since main code is depth view with point cloud.
 
-# Imports 
+# Necessary libraries
 import depthai as dai
 import cv2
 

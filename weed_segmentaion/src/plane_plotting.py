@@ -1,4 +1,5 @@
-# This code simulates the idea for a blueberry bank - Detected two slopes and draw them with Carthesian parameters
+# This code simulates the idea for a blueberry bank - Detected two slopes and draw them with provided Carthesian parameters.
+# Used to check the validity of plane_parameter_calculation.py
 
 # Necessary imports
 import numpy as np

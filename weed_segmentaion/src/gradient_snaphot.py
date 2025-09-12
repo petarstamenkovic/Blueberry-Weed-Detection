@@ -1,3 +1,7 @@
+# This code attempts to repeat the algorithm in an offline (not real time) manner. After algorithm is good 
+# and precise, try to revert to this code for speed optimization.
+
+# Necessary libraries 
 import numpy as np
 import depthai as dai
 import open3d as o3d
@@ -21,6 +25,7 @@ def getStereoPair(pipeline, monoLeft, monoRight):
     monoRight.out.link(stereo.right)
     return stereo
 
+# Function that tries to focus the correct plane
 def updatePlane(prevPlane, newPlane):
     a,b,c,d = newPlane
     new_normal_vector = np.array([a,b,c])

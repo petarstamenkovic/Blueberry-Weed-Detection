@@ -1,4 +1,9 @@
-# This code snippet allows live visualization of a 3d point cloud data
+# This code snippet allows live visualization of a 3d point cloud data. It shows both INLIERS and OUTLIERS 
+# segmenting two planes, slope and flattened part of the bank, fetching Cartesian parameters for both planes. 
+# Combine this with plane_plotting.py to check validity. This code might be depracated since it might work 
+# only in scenario where slope is 'ideal' and has a well visible line of interesction. 
+
+# For a potential real-life solution, visit the gradient_detection.py.
 
 # Necessary imports
 import numpy as np

@@ -1,13 +1,16 @@
 # This code uses gradient calculation and point cloud differences to find the lines of intersection
 
 # Necessary imports
+import json
+import math
+import time
 import numpy as np
 import depthai as dai
 import open3d as o3d
 import cv2
 
 # Parameters for plane comparison
-normal_vector_threshold = 0.1
+normal_vector_threshold = 0.5
 offset_threshold = 0.1
 
 # Camera intrinsics - Extracted from calibration.py
@@ -62,6 +65,7 @@ def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
 
     # Fetch corresponding 3D parameters for these points
     max_points = np.stack([X[top_indices], Y[top_indices], Z[top_indices]], axis=1)
+    #print("Max Points: ", max_points)
 
     return max_points
     
@@ -83,7 +87,7 @@ def pca_line_fitting(points):
     return mean_point, direction
 
 
-# Function that converts 3D point cloud back to 2D and returns coordinated in a tuple
+# Function that converts REAL-WORLD 3D point cloud back to 2D and returns PIXEL coordinates in a tuple
 def backtrack_to_2d(endpoint):
     X, Y, Z = endpoint
     
@@ -91,7 +95,7 @@ def backtrack_to_2d(endpoint):
     if Z == 0:
         return None
     
-    # Backtrack 
+    # Backtrack - Both u and v are in pixel values - these will limit the ROI 
     u = int((X * fx) / Z + cx)
     v = int((Y * fy) / Z + cy)
 
@@ -114,7 +118,7 @@ def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0])
 
     # Define line parameters
     line_points = [endpoint1, endpoint2] # Actual points of the line
-    lines = [[0, 1]]  # Single line connecting the two points - index based
+    lines = [[0, 1]]  # Single line connecting the two points - index based ; "connect 0-th and 1-st point"
 
     # Points in 2D - For line equation and ROI configuration later in the process
     point1 = backtrack_to_2d(endpoint1)
@@ -193,6 +197,9 @@ with dai.Device(pipeline) as device:
     line_set_upper.colors = o3d.utility.Vector3dVector([[0, 0, 1]])  # Blue
     vis.add_geometry(line_set_upper)
  
+    # Initialize time stamp
+    last_write_time = time.time()
+
     # Main loop for processing
     while True:
         # Fetch a depth frame (metrics in mm) and convert it for precission
@@ -238,7 +245,7 @@ with dai.Device(pipeline) as device:
 
         # Try to segment a plane
         plane_model, inliers = pcd.segment_plane(
-            distance_threshold=0.01, # Try adjusting this parameter in case plane starts shifting
+            distance_threshold=0.02, # Try adjusting this parameter in case plane starts shifting
             ransac_n=3, 
             num_iterations=1000)
 
@@ -252,12 +259,39 @@ with dai.Device(pipeline) as device:
         # Extract inliers and prepare them for visualization 
         pcd_inliers = pcd.select_by_index(inliers)
 
+        # ================ ANGLE OF ROTATION CALCULATION ================ #
+
+        # n = [nx, ny, nz]
+        n = np.array([a,b,c], dtype=np.float64)
+        n = n / np.linalg.norm(n)
+
+        # Normal point UP since OAK y axis is DOWN
+        if n[1] > 0:
+            n = -n
+
+        # How much is bank tilted up and down reffereing to x axis?
+        theta_x = math.atan2(n[2], -n[1])
+
+        # How much is bank rotated left and right compared to the z axis?
+        theta_y = math.atan2(n[0], -n[1])
+
+        # Not necessary, data is written in json
+        """
+        print("=====================================================")
+        print(f"Tilt around x axis in RAD is {theta_x} and in DEG is {round(math.degrees(theta_x),2)}.")
+        print(f"Tilt around y axis in RAD is {theta_y} and in DEG is {round(math.degrees(theta_y),2)}.")
+        print("======================================================")
+        """
+
+        # =============================================================== #
+
         # DBScan clustering - Extremely heavy on the visualizer that it becomes inresponsive
         #labels = np.array(
         #    pcd_inliers.cluster_dbscan(eps = 0.05, min_points = 10)
         #)
         #max_label = labels.max()
     
+        # Configure inliers visualization
         pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0])
         pcd_inliers_vis.points = pcd_inliers.points
         pcd_inliers_vis.colors = pcd_inliers.colors
@@ -312,7 +346,7 @@ with dai.Device(pipeline) as device:
         gradient_upper = np.pad(gradient_upper, (0,1), 'constant')
 
         # Number of points to fit a line of intersection - keep this number higher than 100
-        num_points = 200
+        num_points = 300
 
         # Fetch maximum gradient points
         max_gradient_lower_points = fetch_maximum_points(X_lower, Y_lower, Z_lower, gradient_lower, num_points)
@@ -330,9 +364,38 @@ with dai.Device(pipeline) as device:
         m1, x1, y1 = calculate_line_equation(point1_lower, point2_lower)
         m2, x2, y2 = calculate_line_equation(point1_upper, point2_upper)
 
+        # Data format to save as json (rounded to 3 decimal points)
+        dataToSave = {
+            "a" : round(a, 3),
+            "b" : round(b, 3),
+            "c" : round(c, 3),
+            "d" : round(d, 3),
+            "theta_x [RAD]" : round(theta_x, 3),
+            "theta_y [RAD]" : round(theta_y, 3),
+            "theta_x [DEG]" : round(math.degrees(theta_x), 3),
+            "theta_y [DEG]" : round(math.degrees(theta_y), 3),
+            "lower_line_slope" : round(m1,3),
+            "upper_line_slope" : round(m2,3),
+            "x1" : x1,
+            "y1" : y1,
+            "x2" : x2,
+            "y2" : y2
+        }
+
+        # Save the plane model to a JSON file every 3 seconds
+        current_time = time.time()
+        if current_time - last_write_time >= 3:
+            with open("plane_model.json", "w") as json_file:
+                json.dump(dataToSave, json_file, indent=4)
+            last_write_time = current_time
+
+        # Not necessary, data is written in json file
+        """
+        print("======================================================")
         print(f"Lower line of intersection equation : (y - {y1}) = {m1} * (x - {x1})")
-        print("---------------------------------------------------------------")
         print(f"Upper line of intersection equation : (y - {y2}) = {m2} * (x - {x2})")
+        print("======================================================")
+        """
 
         # Update visualizer and its point clouds
         vis.update_geometry(pcd_inliers_vis)

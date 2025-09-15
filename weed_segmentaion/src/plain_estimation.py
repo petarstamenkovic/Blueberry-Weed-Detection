@@ -192,8 +192,8 @@ with dai.Device(pipeline) as device:
                 last_write_time = current_time
 
             print("Plane: ax+by+cz+d=0 ->", plane_model)
-            print("Tilt about X (rad, deg):", theta_x, math.degrees(theta_x))
-            print("Tilt about Y (rad, deg):", theta_y, math.degrees(theta_y))
+            print("Tilt around X (rad, deg):", theta_x, math.degrees(theta_x))
+            print("Tilt around Y (rad, deg):", theta_y, math.degrees(theta_y))
             print("--------------------------------------------------")
             print("Flat plane: a2x+b2y+c2z+d2=0 ->", plane_flattened)
             print("==================================================")

@@ -7,11 +7,10 @@ import time
 import numpy as np
 import depthai as dai
 import open3d as o3d
-import cv2
 
 # Parameters for plane comparison
 normal_vector_threshold = 0.5
-offset_threshold = 0.1
+offset_threshold = 0.5
 
 # Camera intrinsics - Extracted from calibration.py
 fx, fy = 570.33, 570.3   # Focal lenghts
@@ -51,7 +50,7 @@ def updatePlane(prevPlane, newPlane):
     # Calculate the difference in offsets of planes
     offset_diffence = abs(d - prev_d)
 
-    # Comparison of thep lanes under conditions
+    # Comparison of the planes under conditions
     if normal_vectors_alligned > (1 - normal_vector_threshold) and offset_diffence < offset_threshold:
         return newPlane  # Update the plane with a new one 
     else:
@@ -65,11 +64,21 @@ def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
 
     # Fetch corresponding 3D parameters for these points
     max_points = np.stack([X[top_indices], Y[top_indices], Z[top_indices]], axis=1)
-    #print("Max Points: ", max_points)
+    
+    # ============== REMOVING OUTSIDERS FROM MAXIUMUM POINTS FOR MORE ACCURATE PCA FITTING ============== #
+    y_values = max_points[:, 1]
+    median = np.median(y_values)
 
+    # Keep only close points - set threshold here (currently 0.05)
+    mask = np.abs(y_values - median) < 0.05 
+    filtered_points = max_points[mask]
 
-
-    return max_points
+    # Security in case of low number of points
+    if filtered_points.shape[0] > 10:
+        return filtered_points
+    else:
+        return max_points
+    # =================================================================================================== #
     
 # PCA line fitting function
 def pca_line_fitting(points):
@@ -210,9 +219,6 @@ with dai.Device(pipeline) as device:
         
         # From mm to m
         Z = depthFrame / 1000.0 
-        
-        ## Noise removal with median filtering - Seems like it doesn't make much difference
-        #depthFrame = cv2.medianBlur(depthFrame, 5)
 
         # From pixel values to real-life values - Back-projecting
         h, w = Z.shape
@@ -272,6 +278,7 @@ with dai.Device(pipeline) as device:
             n = -n
 
         # How much is bank tilted up and down reffereing to x axis?
+        # CONSIDERATION - Once the camera angle is fixed you can subtract it from theta_x for the actual tilt of the slope
         theta_x = math.atan2(n[2], -n[1])
 
         # How much is bank rotated left and right compared to the z axis?
@@ -403,8 +410,9 @@ with dai.Device(pipeline) as device:
         vis.update_geometry(pcd_inliers_vis)
         vis.update_geometry(line_set_lower)
         vis.update_geometry(line_set_upper)
+        vis.get_render_option().line_width = 10
         vis.poll_events()
         vis.update_renderer()
-
+        #vis.run() # Uncomment this for a frozen frame
 
 # Terminate the code with Ctrl + C

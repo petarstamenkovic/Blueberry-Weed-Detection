@@ -67,6 +67,8 @@ def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
     max_points = np.stack([X[top_indices], Y[top_indices], Z[top_indices]], axis=1)
     #print("Max Points: ", max_points)
 
+
+
     return max_points
     
 # PCA line fitting function

@@ -1,6 +1,9 @@
 # This code segments a plane using RANSAC and calculates the ANGLES OF ROTATION (yaw, pitch and roll) as well as 
 # Cartesian parameters for mentioned plane.
 
+# THIS USED TO BE A SEPARATE FILE, NOW IT IS INTEGRATED IN slope_detection_real_time.py
+
+
 # Imports 
 import numpy as np
 import depthai as dai

@@ -225,18 +225,33 @@ with dai.Device(pipeline) as device:
             ransac_n=3, 
             num_iterations=1000)
 
-        # ================= DBSCAN Clustering attempt ================= #
-        
-
-
-        # ============================================================= #
-
-
         # Extract Cartesian parameter values
         a, b, c, d = plane_model
 
         # Extract inliers and prepare them for visualization 
         pcd_inliers = pcd.select_by_index(inliers)
+
+        # ================= DBSCAN Clustering attempt ================= #
+        
+        print("[INFO] Applying DBSCAN clustering to remove noise...")
+
+        # Apply dbScan to current pcd to remove noise
+        labels = np.array(pcd_inliers.cluster_dbscan(eps = 0.02,
+                                                     min_points = 10,
+                                                     print_progress = True))
+        
+        max_labels = labels.max()
+        print(f"[INFO] Found  {max_labels + 1} clusters in the plane inliers point cloud.")
+
+        # Count how many times each value from 0 to max_labels apperead in labels array (not considering noise -1)
+        counts = np.bincount(labels[labels >= 0])
+
+        # Find the index of the biggest cluster
+        max_cluster_ind = np.argmax(counts)
+
+        # Fetch the points from the largest cluster
+        pcd_clustered = pcd_inliers.select_by_index(np.where(labels == max_cluster_ind)[0])
+
 
         # ================ ANGLE OF ROTATION CALCULATION ================ #
 
@@ -256,17 +271,17 @@ with dai.Device(pipeline) as device:
         theta_y = math.atan2(n[0], -n[1])
 
         # Configure inliers visualization
-        pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0])
-        pcd_inliers_vis.points = pcd_inliers.points
-        pcd_inliers_vis.colors = pcd_inliers.colors
+        pcd_clustered.paint_uniform_color([1.0, 0.0, 0.0])
+        pcd_inliers_vis.points = pcd_clustered.points
+        pcd_inliers_vis.colors = pcd_clustered.colors
         # =============================================================== #
 
         # X_in - Real-life x coordinates of inlier points
         # Y_in - Real-life y coordinates of inlier points
         # Z_in - Distance from the camera of inlier points
-        X_in = np.asarray(pcd_inliers.points)[:,0]
-        Y_in = np.asarray(pcd_inliers.points)[:,1]
-        Z_in = np.asarray(pcd_inliers.points)[:,2]
+        X_in = np.asarray(pcd_clustered.points)[:,0]
+        Y_in = np.asarray(pcd_clustered.points)[:,1]
+        Z_in = np.asarray(pcd_clustered.points)[:,2]
 
         # How much is the point far away from the ideal segmented plane 
         height_values = a*X_in + b*Y_in + c*Z_in + d

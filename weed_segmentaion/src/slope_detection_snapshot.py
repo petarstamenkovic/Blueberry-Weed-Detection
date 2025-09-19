@@ -237,7 +237,7 @@ with dai.Device(pipeline) as device:
 
         # Apply dbScan to current pcd to remove noise
         labels = np.array(pcd_inliers.cluster_dbscan(eps = 0.02,
-                                                     min_points = 10,
+                                                     min_points = 35,
                                                      print_progress = True))
         
         max_labels = labels.max()
@@ -251,7 +251,6 @@ with dai.Device(pipeline) as device:
 
         # Fetch the points from the largest cluster
         pcd_clustered = pcd_inliers.select_by_index(np.where(labels == max_cluster_ind)[0])
-
 
         # ================ ANGLE OF ROTATION CALCULATION ================ #
 
@@ -289,7 +288,10 @@ with dai.Device(pipeline) as device:
         # ============= DIVISION OF A FRAME INTO LOWER AND UPPER ============== #
 
         # Divison by Y coordinates 
-        y_threshold = np.median(Y_in)
+        Y_min, Y_max = np.min(Y_in), np.max(Y_in)
+
+        # Geometrical cut of Y axis
+        y_threshold = (Y_min + Y_max) / 2
 
         # Create masks for upper and lower inlier points
         lower_frame_mask = Y_in < y_threshold
@@ -318,13 +320,23 @@ with dai.Device(pipeline) as device:
         Z_upper = Z_upper[sort_upper_indices]
         height_upper = height_upper[sort_upper_indices]
 
+        # ================ MAXIMUM COMPUTING - WITHOUT GRADIENTS ================ #
+        """
+        gradient_lower = np.argsort(np.abs(height_lower))[::-1][:400]
+        max_gradient_lower_points = np.stack([X_lower[gradient_lower], Y_lower[gradient_lower], Z_lower[gradient_lower]], axis=1)  
+
+        gradient_upper = np.argsort(np.abs(height_upper))[::-1][:400]
+        max_gradient_upper_points = np.stack([X_upper[gradient_upper], Y_upper[gradient_upper], Z_upper[gradient_upper]], axis=1)
+        """
+        # ======================================================================= # 
+
         # Compute gradients for both sections
         gradient_lower = np.abs(np.diff(height_lower, n=1))
         gradient_lower = np.pad(gradient_lower, (0,1), 'constant')
-
+        
         gradient_upper = np.abs(np.diff(height_upper, n=1))
         gradient_upper = np.pad(gradient_upper, (0,1), 'constant')
-
+        
         # Number of points to fit a line of intersection - keep this number higher than 100
         num_points = 300
 

@@ -140,8 +140,6 @@ stereo.depth.link(xOutDepth.input)
 with dai.Device(pipeline) as device:
     depthQueue = device.getOutputQueue(name="Depth", maxSize=4, blocking=False)
 
-
-
     # Main loop for processing
     while True:
 

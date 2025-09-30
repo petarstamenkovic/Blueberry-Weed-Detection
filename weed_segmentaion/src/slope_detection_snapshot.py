@@ -235,7 +235,7 @@ with dai.Device(pipeline) as device:
 
         # Apply dbScan to current pcd to remove noise
         labels = np.array(pcd_inliers.cluster_dbscan(eps = 0.02,
-                                                     min_points = 35,
+                                                     min_points = 25,
                                                      print_progress = True))
         
         max_labels = labels.max()
@@ -284,7 +284,6 @@ with dai.Device(pipeline) as device:
         height_values = a*X_in + b*Y_in + c*Z_in + d
 
         # ============= DIVISION OF A FRAME INTO LOWER AND UPPER ============== #
-
         # Divison by Y coordinates 
         Y_min, Y_max = np.min(Y_in), np.max(Y_in)
 
@@ -318,7 +317,8 @@ with dai.Device(pipeline) as device:
         Z_upper = Z_upper[sort_upper_indices]
         height_upper = height_upper[sort_upper_indices]
 
-        # ================ MAXIMUM COMPUTING - WITHOUT GRADIENTS ================ #
+        # ================ MAXIMUM COMPUTING - WITHOUT GRADIENTS - TAKE x HIGHEST POINTS ================ #
+        # This method doesnt work well, because potential noise offsets the direction of a line by a lot
         """
         gradient_lower = np.argsort(np.abs(height_lower))[::-1][:400]
         max_gradient_lower_points = np.stack([X_lower[gradient_lower], Y_lower[gradient_lower], Z_lower[gradient_lower]], axis=1)  
@@ -329,8 +329,8 @@ with dai.Device(pipeline) as device:
         # ======================================================================= # 
 
         # Compute gradients for both sections
-        gradient_lower = np.abs(np.diff(height_lower, n=1))
-        gradient_lower = np.pad(gradient_lower, (0,1), 'constant')
+        gradient_lower = np.abs(np.diff(height_lower, n=1)) # diff calculates differences between consecutive elements
+        gradient_lower = np.pad(gradient_lower, (0,1), 'constant') # add one zero to the LEFT
         
         gradient_upper = np.abs(np.diff(height_upper, n=1))
         gradient_upper = np.pad(gradient_upper, (0,1), 'constant')

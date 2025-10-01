@@ -220,8 +220,8 @@ with dai.Device(pipeline) as device:
         # Try to segment a plane
         plane_model, inliers = pcd.segment_plane(
             distance_threshold=0.02, # Try adjusting this parameter in case plane starts shifting
-            ransac_n=3, 
-            num_iterations=1000)
+            ransac_n=3,              # 3 points are minimum for a plane creation
+            num_iterations=1000)     # Consult documentation for exact formula
 
         # Extract Cartesian parameter values
         a, b, c, d = plane_model
@@ -386,7 +386,8 @@ with dai.Device(pipeline) as device:
         vis.update_renderer()
         vis.run() # Uncomment this for a frozen frame
 
-        key_press = input("[ACTION REQUIRED] Press 'r' to fetch again or Enter 'q' to exit the code. \n")
+        # Key manipulation for program execution
+        key_press = input("[ACTION REQUIRED] Press 'r' and Enter to fetch again or Enter 'q' and Enter to exit the code. \n")
         if key_press == 'r':
             # Close visualizer window
             vis.destroy_window()
@@ -394,6 +395,3 @@ with dai.Device(pipeline) as device:
             print("[INFO] Code terminated.")
             break 
 
-
-
-# Terminate the code with Ctrl + C   

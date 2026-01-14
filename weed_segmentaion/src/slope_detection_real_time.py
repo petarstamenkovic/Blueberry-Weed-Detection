@@ -13,8 +13,15 @@ normal_vector_threshold = 0.5
 offset_threshold = 0.5
 
 # Camera intrinsics - Extracted from calibration.py
-fx, fy = 570.33, 570.3   # Focal lenghts
-cx, cy = 655.38, 358.85  # Camera principle values 
+#fx, fy = 570.33, 570.3   # Focal lenghts
+#cx, cy = 655.38, 358.85  # Camera principle values 
+
+# Parameters for OAK D - Camera number 9
+fx = 856.8466
+fy = 857.0558
+cx = 632.1884
+cy = 366.1514
+
 
 # ========================= FUNCTIONS ========================= #
 

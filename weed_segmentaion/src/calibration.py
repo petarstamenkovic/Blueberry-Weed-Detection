@@ -97,3 +97,11 @@ with dai.Device() as device:
         l_rgb_extrinsics = np.array(calibData.getCameraExtrinsics(dai.CameraBoardSocket.CAM_B, dai.CameraBoardSocket.CAM_A))
         print("Transformation matrix of where left Camera is W.R.T RGB Camera's optical center")
         print(l_rgb_extrinsics)
+
+
+# Device recognition
+eeprom = calibData.getEepromData()
+
+print("Board name:", eeprom.boardName)
+print("Product name:", eeprom.productName)
+print("Revision:", eeprom.boardRev)

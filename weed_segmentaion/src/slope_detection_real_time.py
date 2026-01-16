@@ -64,7 +64,7 @@ def updatePlane(prevPlane, newPlane):
         return prevPlane # Keep the previous plane
 
 # Fetch first num_points number of maximum gradient points
-def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
+def fetchMaximumPoints(X, Y, Z, gradient_array, num_points):
     # Sort in descending order and grab first num_points samples
     top_indices = np.argsort(gradient_array)[::-1]
     top_indices = top_indices[:num_points]
@@ -88,7 +88,7 @@ def fetch_maximum_points(X, Y, Z, gradient_array, num_points):
     # =================================================================================================== #
     
 # PCA line fitting function
-def pca_line_fitting(points):
+def pcaLineFitting(points):
 
     # Center the points around the mean
     mean_point = np.mean(points, axis=0)
@@ -106,7 +106,7 @@ def pca_line_fitting(points):
 
 
 # Function that converts REAL-WORLD 3D point cloud back to 2D and returns PIXEL coordinates in a tuple
-def backtrack_to_2d(endpoint):
+def backtrackTo2D(endpoint):
     X, Y, Z = endpoint
     
     # Skip if Z is 0 due to division
@@ -120,7 +120,7 @@ def backtrack_to_2d(endpoint):
     return (u,v)
 
 # Convert PCA lines to Open3D lines
-def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0]):
+def lineToO3dLine(line_set, mean_point, direction, length=0.5, color=[0,1,0]):
     direction = direction / np.linalg.norm(direction)
 
     # Create endpoints of the line segment
@@ -139,8 +139,8 @@ def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0])
     lines = [[0, 1]]  # Single line connecting the two points - index based ; "connect 0-th and 1-st point"
 
     # Points in 2D - For line equation and ROI configuration later in the process
-    point1 = backtrack_to_2d(endpoint1)
-    point2 = backtrack_to_2d(endpoint2)
+    point1 = backtrackTo2D(endpoint1)
+    point2 = backtrackTo2D(endpoint2)
 
     # Add line parameters
     line_set.points = o3d.utility.Vector3dVector(line_points)
@@ -150,7 +150,7 @@ def line_to_o3d_line(line_set, mean_point, direction, length=0.5, color=[0,1,0])
     return line_set, point1, point2
 
 # Function that calculates 2D line equation
-def calculate_line_equation(point1, point2):
+def calculateLineEquation(point1, point2):
     x1, y1 = point1
     x2, y2 = point2
 
@@ -262,9 +262,9 @@ with dai.Device(pipeline) as device:
         plane_model, inliers = pcd.segment_plane(
             distance_threshold=0.02, # Try adjusting this parameter in case plane starts shifting
             ransac_n=3, 
-            num_iterations=1000)
-
-        # Function that keeps a slope plane locked
+            num_iterations=1000) # Try calculating it with a given formula
+ 
+        # Function that keeps a slope plane locked - Deactivated
         #activePlane = updatePlane(previousPlane, plane_model)
 
         # Extract Cartesian parameter values
@@ -291,14 +291,13 @@ with dai.Device(pipeline) as device:
         # How much is bank rotated left and right compared to the z axis?
         theta_y = math.atan2(n[0], -n[1])
 
-        # Not necessary, data is written in json
+        # Not necessary, data is written in json, use this for debugging in terminal
         """
         print("=====================================================")
         print(f"Tilt around x axis in RAD is {theta_x} and in DEG is {round(math.degrees(theta_x),2)}.")
         print(f"Tilt around y axis in RAD is {theta_y} and in DEG is {round(math.degrees(theta_y),2)}.")
         print("======================================================")
         """
-
         # =============================================================== #
 
         # DBScan clustering - Extremely heavy on the visualizer that it becomes inresponsive
@@ -365,20 +364,20 @@ with dai.Device(pipeline) as device:
         num_points = 300
 
         # Fetch maximum gradient points
-        max_gradient_lower_points = fetch_maximum_points(X_lower, Y_lower, Z_lower, gradient_lower, num_points)
-        max_gradient_upper_points = fetch_maximum_points(X_upper, Y_upper, Z_upper, gradient_upper, num_points)
+        max_gradient_lower_points = fetchMaximumPoints(X_lower, Y_lower, Z_lower, gradient_lower, num_points)
+        max_gradient_upper_points = fetchMaximumPoints(X_upper, Y_upper, Z_upper, gradient_upper, num_points)
 
         # Fit lines using PCA
-        mean_lower, direction_lower = pca_line_fitting(max_gradient_lower_points)
-        mean_upper, direction_upper = pca_line_fitting(max_gradient_upper_points)
+        mean_lower, direction_lower = pcaLineFitting(max_gradient_lower_points)
+        mean_upper, direction_upper = pcaLineFitting(max_gradient_upper_points)
 
         # Convert lines into open3D lines 
-        line_set_lower, point1_lower, point2_lower = line_to_o3d_line(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
-        line_set_upper, point1_upper, point2_upper = line_to_o3d_line(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
+        line_set_lower, point1_lower, point2_lower = lineToO3dLine(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
+        line_set_upper, point1_upper, point2_upper = lineToO3dLine(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
 
         # Calculate line equations for ROI later on
-        m1, x1, y1 = calculate_line_equation(point1_lower, point2_lower)
-        m2, x2, y2 = calculate_line_equation(point1_upper, point2_upper)
+        m1, x1, y1 = calculateLineEquation(point1_lower, point2_lower)
+        m2, x2, y2 = calculateLineEquation(point1_upper, point2_upper)
 
         # Data format to save as json (rounded to 3 decimal points)
         dataToSave = {

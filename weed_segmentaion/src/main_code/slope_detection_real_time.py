@@ -7,61 +7,9 @@ import time
 import numpy as np
 import depthai as dai
 import open3d as o3d
-
-# Parameters for plane comparison
-normal_vector_threshold = 0.5
-offset_threshold = 0.5
-
-# Camera intrinsics - Extracted from calibration.py
-#fx, fy = 570.33, 570.3   # Focal lenghts
-#cx, cy = 655.38, 358.85  # Camera principle values 
-
-# Parameters for OAK D - Camera number 9
-fx = 856.8466
-fy = 857.0558
-cx = 632.1884
-cy = 366.1514
-
+import utils
 
 # ========================= FUNCTIONS ========================= #
-
-# Function to get stereo pair and configure it 
-def getStereoPair(pipeline, monoLeft, monoRight):
-    stereo = pipeline.create(dai.node.StereoDepth)
-    stereo.setLeftRightCheck(True)
-    stereo.setSubpixel(True)
-    stereo.setExtendedDisparity(False)
-    monoLeft.out.link(stereo.left)
-    monoRight.out.link(stereo.right)
-    return stereo
-
-# Function that tries to maintain the focused plain
-def updatePlane(prevPlane, newPlane):
-    # Current plane Carthesian parameters and normal vector
-    a,b,c,d = newPlane
-    new_normal_vector = np.array([a,b,c])
-    new_normal_vector = new_normal_vector / np.linalg.norm(new_normal_vector)
-
-    # In first iteration, there is no 'previous' plane
-    if prevPlane is None:
-        return newPlane
-    
-    # Previous plane Carthesian parameters and normal vector
-    prev_a, prev_b, prev_c, prev_d = prevPlane
-    old_normal_vector = np.array([prev_a, prev_b, prev_c])
-    old_normal_vector = old_normal_vector / np.linalg.norm(old_normal_vector)
-
-    # Calculate the similarities of the normal vectors of a previous and a current plane
-    normal_vectors_alligned = abs(np.dot(new_normal_vector, old_normal_vector))
-
-    # Calculate the difference in offsets of planes
-    offset_diffence = abs(d - prev_d)
-
-    # Comparison of the planes under conditions
-    if normal_vectors_alligned > (1 - normal_vector_threshold) and offset_diffence < offset_threshold:
-        return newPlane  # Update the plane with a new one 
-    else:
-        return prevPlane # Keep the previous plane
 
 # Fetch first num_points number of maximum gradient points
 def fetchMaximumPoints(X, Y, Z, gradient_array, num_points):
@@ -85,7 +33,7 @@ def fetchMaximumPoints(X, Y, Z, gradient_array, num_points):
         return filtered_points
     else:
         return max_points
-    # =================================================================================================== #
+
     
 # PCA line fitting function
 def pcaLineFitting(points):
@@ -104,64 +52,6 @@ def pcaLineFitting(points):
 
     return mean_point, direction
 
-
-# Function that converts REAL-WORLD 3D point cloud back to 2D and returns PIXEL coordinates in a tuple
-def backtrackTo2D(endpoint):
-    X, Y, Z = endpoint
-    
-    # Skip if Z is 0 due to division
-    if Z == 0:
-        return None
-    
-    # Backtrack - Both u and v are in pixel values - these will limit the ROI 
-    u = int((X * fx) / Z + cx)
-    v = int((Y * fy) / Z + cy)
-
-    return (u,v)
-
-# Convert PCA lines to Open3D lines
-def lineToO3dLine(line_set, mean_point, direction, length=0.5, color=[0,1,0]):
-    direction = direction / np.linalg.norm(direction)
-
-    # Create endpoints of the line segment
-    endpoint1 = mean_point - (direction * length / 2)
-    endpoint2 = mean_point + (direction * length / 2)
-
-    """
-    print("Endpoint 1 : ", endpoint1)
-    print("-------------------------------------")
-    print("Endpoint 2 : ", endpoint2)
-    print("=====================================")
-    """
-
-    # Define line parameters
-    line_points = [endpoint1, endpoint2] # Actual points of the line
-    lines = [[0, 1]]  # Single line connecting the two points - index based ; "connect 0-th and 1-st point"
-
-    # Points in 2D - For line equation and ROI configuration later in the process
-    point1 = backtrackTo2D(endpoint1)
-    point2 = backtrackTo2D(endpoint2)
-
-    # Add line parameters
-    line_set.points = o3d.utility.Vector3dVector(line_points)
-    line_set.lines = o3d.utility.Vector2iVector(lines)
-    line_set.colors = o3d.utility.Vector3dVector([color])
-    
-    return line_set, point1, point2
-
-# Function that calculates 2D line equation
-def calculateLineEquation(point1, point2):
-    x1, y1 = point1
-    x2, y2 = point2
-
-    A = y1 - y2
-    B = x2 - x1
-
-    m = round(A / B , 2)
-
-    return m, x1, y1
-
-
 # ============================= CODE EXECUTION ============================= #
 
 # Create pipeline
@@ -176,7 +66,7 @@ monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
 monoRight.setBoardSocket(dai.CameraBoardSocket.CAM_C)
 
 # Stereo depth
-stereo = getStereoPair(pipeline, monoLeft, monoRight)
+stereo = utils.getStereoPair(pipeline, monoLeft, monoRight)
 
 # XLinkOut node for depth output
 xOutDepth = pipeline.createXLinkOut()
@@ -230,8 +120,8 @@ with dai.Device(pipeline) as device:
         # From pixel values to real-life values - Back-projecting
         h, w = Z.shape
         u, v = np.meshgrid(np.arange(w), np.arange(h))
-        X = (u - cx) * Z / fx
-        Y = (v - cy) * Z / fy
+        X = (u - utils.cx) * Z / utils.fx
+        Y = (v - utils.cy) * Z / utils.fy
 
         # So now 
         # X - Real-life x coordinates of a pixel(u,v)
@@ -265,7 +155,7 @@ with dai.Device(pipeline) as device:
             num_iterations=1000) # Try calculating it with a given formula
  
         # Function that keeps a slope plane locked - Deactivated
-        #activePlane = updatePlane(previousPlane, plane_model)
+        #activePlane = utils.updatePlane(previousPlane, plane_model)
 
         # Extract Cartesian parameter values
         a, b, c, d = plane_model
@@ -372,12 +262,12 @@ with dai.Device(pipeline) as device:
         mean_upper, direction_upper = pcaLineFitting(max_gradient_upper_points)
 
         # Convert lines into open3D lines 
-        line_set_lower, point1_lower, point2_lower = lineToO3dLine(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
-        line_set_upper, point1_upper, point2_upper = lineToO3dLine(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
+        line_set_lower, point1_lower, point2_lower = utils.lineToO3dLine(line_set_lower, mean_lower, direction_lower, length=0.5, color=[0,1,0])
+        line_set_upper, point1_upper, point2_upper = utils.lineToO3dLine(line_set_upper, mean_upper, direction_upper, length=0.5, color=[0,0,1])
 
         # Calculate line equations for ROI later on
-        m1, x1, y1 = calculateLineEquation(point1_lower, point2_lower)
-        m2, x2, y2 = calculateLineEquation(point1_upper, point2_upper)
+        m1, x1, y1 = utils.calculateLineEquation(point1_lower, point2_lower)
+        m2, x2, y2 = utils.calculateLineEquation(point1_upper, point2_upper)
 
         # Data format to save as json (rounded to 3 decimal points)
         dataToSave = {

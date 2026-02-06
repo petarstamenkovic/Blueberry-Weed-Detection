@@ -21,14 +21,24 @@ fy = 857.0558
 cx = 632.1884
 cy = 366.1514
 
-# Function to get stereo pair and configure it 
-def getStereoPair(pipeline, monoLeft, monoRight):
+def buildStereoPipeline(pipeline):
+
+    # Setup mono cameras
+    monoLeft = pipeline.create(dai.node.MonoCamera)
+    monoRight = pipeline.create(dai.node.MonoCamera)
+    monoLeft.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+    monoLeft.setBoardSocket(dai.CameraBoardSocket.CAM_B)
+    monoRight.setResolution(dai.MonoCameraProperties.SensorResolution.THE_720_P)
+    monoRight.setBoardSocket(dai.CameraBoardSocket.CAM_C)
+
+    # Stereo setup
     stereo = pipeline.create(dai.node.StereoDepth)
     stereo.setLeftRightCheck(True)
     stereo.setSubpixel(True)
     stereo.setExtendedDisparity(False)
     monoLeft.out.link(stereo.left)
     monoRight.out.link(stereo.right)
+    
     return stereo
 
 # Function that tries to maintain the focused plain
@@ -59,6 +69,13 @@ def updatePlane(prevPlane, newPlane):
     else:
         return prevPlane # Keep the previous plane
     
+
+# Function that converts 2D depth frame to 3D point cloud. X,Y and Z are now real-world coordinates of points in the scene.
+def backproject(h,w,Z):
+    u,v = np.meshgrid(np.arange(w), np.arange(h))
+    X = (u - cx) * Z / fx
+    Y = (v - cy) * Z / fy
+    return X,Y
 
 # Function that converts REAL-WORLD 3D point cloud back to 2D and returns PIXEL coordinates in a tuple
 def backtrackTo2D(endpoint):

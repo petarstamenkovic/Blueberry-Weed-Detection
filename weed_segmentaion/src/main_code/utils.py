@@ -77,6 +77,16 @@ def backproject(h,w,Z):
     Y = (v - cy) * Z / fy
     return X,Y
 
+# BackProjeckting of a patch
+def backproject_patch(y0,y1,x0,x1,Z):
+    patch_Z = Z[y0:y1, x0:x1]
+    patch_h, patch_w = patch_Z.shape
+    patch_u,patch_v = np.meshgrid(np.arange(patch_w), np.arange(patch_h))
+    patch_X = (patch_u + x0 - cx) * patch_Z / fx
+    patch_Y = (patch_v + y0 - cy) * patch_Z / fy
+    return patch_X, patch_Y, patch_Z
+    
+
 # Function that converts REAL-WORLD 3D point cloud back to 2D and returns PIXEL coordinates in a tuple
 def backtrackTo2D(endpoint):
     X, Y, Z = endpoint

@@ -33,7 +33,7 @@ with utils.dai.Device(pipeline) as device:
 
     # Create a O3D visualizer
     vis = utils.o3d.visualization.Visualizer()
-    vis.create_window(window_name="Live preview", width=800, height=600)
+    #vis.create_window(window_name="Live preview", width=800, height=600)
     vis.add_geometry(utils.o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5))
 
     # Point cloud variable for SLOPE patch data
@@ -45,8 +45,21 @@ with utils.dai.Device(pipeline) as device:
     # Point cloud variable for inliers
     pcd_inliers = utils.o3d.geometry.PointCloud()
     pcd_inliers.points = utils.o3d.utility.Vector3dVector(np.zeros((1,3)))
-    pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0]) # Yellow
+    pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0]) # Blue
     vis.add_geometry(pcd_inliers)
+
+    # Point cloud variable for upper line of intersection
+    pcd_upper_line = utils.o3d.geometry.PointCloud()
+    pcd_upper_line.points = utils.o3d.utility.Vector3dVector(np.zeros((1,3)))
+    pcd_upper_line.paint_uniform_color([0.0, 1.0, 0.0]) # Green
+    vis.add_geometry(pcd_upper_line)
+
+    # Point cloud variable for lower line of intersection
+    pcd_lower_line = utils.o3d.geometry.PointCloud()
+    pcd_lower_line.points = utils.o3d.utility.Vector3dVector(np.zeros((1,3)))
+    pcd_lower_line.paint_uniform_color([0.0, 0.0, 1.0]) # Red
+    vis.add_geometry(pcd_lower_line)
+
 
     # Main loop for processing
     while True:
@@ -60,7 +73,7 @@ with utils.dai.Device(pipeline) as device:
         h,w = Z.shape
 
         # Patch division
-        patch_size = 80 # in pixels
+        patch_size = 40 # in pixels
         patches_x = w // patch_size
         patches_y = h // patch_size
 
@@ -151,10 +164,21 @@ with utils.dai.Device(pipeline) as device:
         sizes = ndi.sum(slope_mask, labeled_array, range(1,num_features+1))
 
         # Find valid clusters
-        cluster_size = 3
-        valid_clusters = [i+1 for i,s in enumerate(sizes) if s>=3]
+        cluster_size = 100
+        valid_clusters = [i+1 for i,s in enumerate(sizes) if s>=cluster_size]
 
         valid_slope_mask = np.isin(labeled_array, valid_clusters)
+
+        # #Visualization
+        viz = np.zeros((patches_y, patches_x, 3), dtype=np.uint8)
+
+        # #BGR Format 
+        viz[valid_slope_mask] = (0,255,0) # Green
+        viz[~valid_slope_mask] = (0,0,0) # Black
+
+        viz = cv2.resize(viz, (w,h), interpolation=cv2.INTER_NEAREST)
+        cv2.imshow("Filtered only SLOPE data", viz)
+        cv2.waitKey(1)
 
         points_slope = []
 
@@ -213,12 +237,80 @@ with utils.dai.Device(pipeline) as device:
 
         # Update inlier points
         pcd_inliers = pcd.select_by_index(inliers)
-        pcd_inliers.paint_uniform_color([1.0, 0.0, 0.0])
+        #pcd_inliers.paint_uniform_color([1.0, 1.0, 0.0])
         pcd_inliers.points = pcd_inliers.points
         pcd_inliers.colors = pcd_inliers.colors
+
+        # Point cloud into array  
+        # [:,0] => X coordinates // [:,1] => Y coordinates // [:,2] => Z coordinates
+        inlier_points = np.asarray(pcd_inliers.points)
+
+        # Binning method - divide X axis into columns (bins)
+        num_bins = 50
+        x_min, x_max = inlier_points[:,0].min(), inlier_points[:,0].max()
+        bins = np.linspace(x_min, x_max, num_bins+1)
+
+        # Prepare arrays to be fitted
+        upper_bin_values = []
+        lower_bin_values = []
+        x_bin_values     = []
+
+        for i in range(num_bins):
+            # Bin edges
+            x0, x1 = bins[i], bins[i+1]
+            bin_mask = (inlier_points[:,0] >= x0) & (inlier_points[:,0] < x1)
+            bin_points = inlier_points[bin_mask]
+
+            if len(bin_points) == 0:
+                continue 
+
+            # Sort the Y values
+            sorted_y_values = np.sort(bin_points[:,1]) # ascending order
+
+            # Fetch points 
+            num_point_to_evaluate = 20
+            lower_y_points = sorted_y_values[:num_point_to_evaluate]
+            upper_y_points = sorted_y_values[-num_point_to_evaluate:]
+
+            # Median calculation
+            lower_median = np.median(lower_y_points)
+            upper_median = np.median(upper_y_points)
+
+            # Add to data pool for fitting
+            lower_bin_values.append(lower_median)
+            upper_bin_values.append(upper_median)
+
+            x_center = (x0+x1)/2
+            x_bin_values.append(x_center)
+
+        # Polyfit needs arrays instead of lists
+        x_vals = np.array(x_bin_values)
+        y_upper = np.array(upper_bin_values)
+        y_lower = np.array(lower_bin_values)
+
+        # Linear regression to fit lines - returns slope and intercept
+        lower_line_coef = np.polyfit(x_vals, y_lower, 1)
+        upper_line_coef = np.polyfit(x_vals, y_upper, 1)
+
+        num_line_points = 50
+        x_line = np.linspace(x_vals.min(), x_vals.max(), num_line_points)
+
+        # Compute corresponding y values
+        y_lower_line = lower_line_coef[0]*x_line + lower_line_coef[1]
+        y_upper_line = upper_line_coef[0]*x_line + upper_line_coef[1]
+
+        # Compute Z on plane
+        z_lower_line = (-a*x_line - b*y_lower_line - d)/c
+        z_upper_line = (-a*x_line - b*y_upper_line - d)/c
+
+        # Update lines point clouds
+        pcd_lower_line.points = utils.o3d.utility.Vector3dVector(np.stack([x_line, y_lower_line, z_lower_line], axis=1))
+        pcd_upper_line.points = utils.o3d.utility.Vector3dVector(np.stack([x_line, y_upper_line, z_upper_line], axis=1))
 
         # Update visualizer and its point clouds
         vis.update_geometry(pcd)
         vis.update_geometry(pcd_inliers)
+        vis.update_geometry(pcd_lower_line)
+        vis.update_geometry(pcd_upper_line)
         vis.poll_events()
         vis.update_renderer()

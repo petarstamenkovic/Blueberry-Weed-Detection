@@ -33,7 +33,7 @@ with utils.dai.Device(pipeline) as device:
 
     # Create a O3D visualizer
     vis = utils.o3d.visualization.Visualizer()
-    #vis.create_window(window_name="Live preview", width=800, height=600)
+    vis.create_window(window_name="Live preview", width=800, height=600)
     vis.add_geometry(utils.o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5))
 
     # Point cloud variable for SLOPE patch data
@@ -169,18 +169,16 @@ with utils.dai.Device(pipeline) as device:
 
         valid_slope_mask = np.isin(labeled_array, valid_clusters)
 
-        # #Visualization
-        viz = np.zeros((patches_y, patches_x, 3), dtype=np.uint8)
+        # # #Visualization
+        # viz = np.zeros((patches_y, patches_x, 3), dtype=np.uint8)
 
-        # #BGR Format 
-        viz[valid_slope_mask] = (0,255,0) # Green
-        viz[~valid_slope_mask] = (0,0,0) # Black
+        # # #BGR Format 
+        # viz[valid_slope_mask] = (0,255,0) # Green
+        # viz[~valid_slope_mask] = (0,0,0) # Black
 
-        viz = cv2.resize(viz, (w,h), interpolation=cv2.INTER_NEAREST)
-        cv2.imshow("Filtered only SLOPE data", viz)
-        cv2.waitKey(1)
-
-        points_slope = []
+        # viz = cv2.resize(viz, (w,h), interpolation=cv2.INTER_NEAREST)
+        # cv2.imshow("Filtered only SLOPE data", viz)
+        # cv2.waitKey(1)
 
         for py in range(patches_y):
             for px in range(patches_x):
@@ -228,7 +226,7 @@ with utils.dai.Device(pipeline) as device:
 
         # RANSAC
         plane_model, inliers = pcd.segment_plane(
-            distance_threshold=0.02, # Try adjusting this parameter in case plane starts shifting
+            distance_threshold=0.01, # Try adjusting this parameter in case plane starts shifting
             ransac_n=3, 
             num_iterations=1000) # Try calculating it with a given formula
  

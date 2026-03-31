@@ -4,7 +4,7 @@ import cv2
 import os
 import utils
 
-NUM_FRAMES = 200
+NUM_FRAMES = 50
 OUTPUT_DIR = "oak_depth_data_2"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
